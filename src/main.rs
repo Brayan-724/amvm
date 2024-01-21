@@ -1,34 +1,27 @@
 use amvm::*;
 
 fn main() {
-    let hello_msg_var = Command::DeclareVariable {
-        name: Box::from("hello_msg"),
-        value: Some(Box::from(CommandExpression::Value(Value::String(
-            "Hello World!".into(),
-        )))),
-    };
+    let commands = [
+        Command::DeclareVariable {
+            name: "hello_msg".into(),
+            kind: VariableKind::Const,
+            value: Value::String("Hello World!\n".into()).into(),
+        },
+        Command::Puts {
+            value: CommandExpression::Var("hello_msg".into()),
+        },
+    ];
 
-    let a_var = Command::DeclareVariable {
-        name: Box::from("a"),
-        value: Some(Box::from(CommandExpression::Value(Value::U8(1)))),
-    };
-    let b_var = Command::DeclareVariable {
-        name: Box::from("b"),
-        value: Some(Box::from(CommandExpression::Value(Value::U8(2)))),
-    };
-    let c_var = Command::DeclareVariable {
-        name: Box::from("c"),
-        value: Some(Box::from(CommandExpression::Addition(
-            Box::new(CommandExpression::Value(Value::U8(1))),
-            Box::new(CommandExpression::Value(Value::U8(2))),
-        ))),
-    };
-    let mut runtime = Runtime::new(vec![hello_msg_var, a_var, b_var, c_var]);
-    runtime.step();
-    runtime.step();
-    runtime.step();
-    runtime.step();
-    println!("{runtime:#?}");
-    // let hello_msg_var = hello_msg_var.compile_bytecode();
-    // print!("{AMVM_HEADER}{COMMAND_SEPARATOR}{hello_msg_var}{COMMAND_SEPARATOR}");
+    let mut args = std::env::args().skip(1);
+    let runit = args.next() == Some("run".into());
+    if runit {
+        let filepath = args.next().expect("Provide file path to the bytecode file");
+        let mut parser = Parser::from_filepath(filepath).expect("Can't read file");
+        let mut runtime = parser.runtime();
+        println!("{runtime:#?}");
+        runtime.run();
+    } else {
+        let hello_msg_var = commands.compile_bytecode();
+        print!("{AMVM_HEADER}{COMMAND_SEPARATOR}{hello_msg_var}");
+    }
 }

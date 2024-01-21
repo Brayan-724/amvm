@@ -1,13 +1,23 @@
 mod runtime;
 pub use runtime::Runtime;
 
-pub static AMVM_HEADER: &'static str = "\x08\x48\x30"; // Arbitrary value
+mod parser;
+pub use parser::Parser;
+
+pub static AMVM_HEADER: &'static str = "\x08\x48\x30"; // Arbitrary value for sign (0x0B4B30)
 pub static COMMAND_SEPARATOR: char = '\0';
 
 pub static CMD_DCLR_VAR: char = '\x01';
+pub static CMD_ASGN_VAR: char = '\x0D';
+pub static CMD_PUTS: char = '\x0E'; // <-- Last entry
 pub static CMD_EVAL: char = '\x02';
 
+pub static VAR_CONST: char = '\x0B';
+pub static VAR_LET: char = '\x0C';
+
 pub static EXPR_VALUE: char = '\x03';
+pub static EXPR_VAR: char = '\x0A';
+pub static EXPR_ADD: char = '\x09';
 
 pub static VALUE_UNDEFINED: char = '\x04';
 pub static VALUE_STRING: char = '\x05';
@@ -24,6 +34,36 @@ pub enum Value {
     F32(f32),
 }
 
+impl Into<Value> for &str {
+    fn into(self) -> Value {
+        Value::String(self.into())
+    }
+}
+
+impl Into<CommandExpression> for Value {
+    fn into(self) -> CommandExpression {
+        CommandExpression::Value(self)
+    }
+}
+
+impl Into<Option<CommandExpression>> for Value {
+    fn into(self) -> Option<CommandExpression> {
+        Some(CommandExpression::Value(self))
+    }
+}
+
+impl Into<Box<CommandExpression>> for Value {
+    fn into(self) -> Box<CommandExpression> {
+        CommandExpression::Value(self).into()
+    }
+}
+
+impl Into<Option<Box<CommandExpression>>> for Value {
+    fn into(self) -> Option<Box<CommandExpression>> {
+        CommandExpression::Value(self).into()
+    }
+}
+
 impl Value {
     pub fn compile_bytecode(&self) -> Box<str> {
         Box::from(match self {
@@ -38,40 +78,87 @@ impl Value {
                     .replace("\x00", &String::from_utf8_lossy(&[255, 00]));
                 format!("{VALUE_STRING}{s}{COMMAND_SEPARATOR}")
             }
-            Self::U8(v) => format!(
-                "{VALUE_U8}{}{COMMAND_SEPARATOR}",
-                String::from_utf8_lossy(&[v + 1])
-            ),
+            Self::U8(v) => format!("{VALUE_U8}{}", String::from_utf8_lossy(&[v + 1])),
             Self::I16(v) => format!(
-                "{VALUE_I16}{}{}{COMMAND_SEPARATOR}",
-                String::from_utf8_lossy(&[if v.is_positive() { 2 } else { 1 }]),
-                String::from_utf16_lossy(&[v.unsigned_abs() + 1])
+                "{VALUE_I16}{}",
+                String::from_utf8_lossy(&[
+                    if v.is_positive() { 1 } else { 0 },
+                    (v.unsigned_abs() >> 8) as u8,
+                    v.unsigned_abs() as u8,
+                ]),
             ),
             Self::F32(v) => format!("{VALUE_F32}{v}{COMMAND_SEPARATOR}",),
         })
+    }
+
+    pub fn is_string(&self) -> bool {
+        matches!(self, Self::String(..))
+    }
+
+    pub fn as_string(&self) -> Option<&String> {
+        if let Self::String(v) = self {
+            Some(v)
+        } else {
+            None
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandExpression {
     Value(Value),
+    Var(Value),
     Addition(Box<CommandExpression>, Box<CommandExpression>),
+}
+
+impl Into<Option<Box<CommandExpression>>> for CommandExpression {
+    fn into(self) -> Option<Box<CommandExpression>> {
+        Some(Box::from(self))
+    }
 }
 
 impl CommandExpression {
     pub fn compile_bytecode(&self) -> Box<str> {
         Box::from(match self {
             Self::Value(v) => v.compile_bytecode(),
-            Self::Addition(a, b) => Box::from(format!("ADDITION")),
+            Self::Var(var) => Box::from(format!("{EXPR_VAR}{}", var.compile_bytecode())),
+            Self::Addition(a, b) => Box::from(format!(
+                "{EXPR_ADD}{}{}",
+                a.compile_bytecode(),
+                b.compile_bytecode()
+            )),
         })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum VariableKind {
+    Const,
+    Let,
+}
+
+impl VariableKind {
+    pub fn compile_bytecode(&self) -> char {
+        match self {
+            VariableKind::Const => VAR_CONST,
+            VariableKind::Let => VAR_LET,
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     DeclareVariable {
-        name: Box<str>,
-        value: Option<Box<CommandExpression>>,
+        name: Value,
+        value: Option<CommandExpression>,
+        kind: VariableKind,
+    },
+    AssignVariable {
+        name: Value,
+        value: CommandExpression,
+    },
+    Puts {
+        value: CommandExpression,
     },
     Evaluate {
         expr: CommandExpression,
@@ -82,24 +169,57 @@ impl Command {
     pub fn get_kind(&self) -> char {
         match self {
             Self::DeclareVariable { .. } => CMD_DCLR_VAR,
+            Self::AssignVariable { .. } => CMD_ASGN_VAR,
+            Self::Puts { .. } => CMD_PUTS,
             Self::Evaluate { .. } => CMD_EVAL,
         }
     }
 
     pub fn compile_bytecode(&self) -> Box<str> {
-        let kind = Command::get_kind(&self);
-
         match self {
-            Self::DeclareVariable { name, value } => {
-                let name = Value::String(name.to_string()).compile_bytecode();
+            Self::DeclareVariable { name, value, kind } => {
+                if !name.is_string() {
+                    panic!("Variable name should be string");
+                }
+                let name = name.compile_bytecode();
+
                 let value = if let Some(value) = value {
                     value.compile_bytecode()
                 } else {
                     CommandExpression::Value(Value::Undefined).compile_bytecode()
                 };
-                Box::from(format!("{kind}{name}{value}{COMMAND_SEPARATOR}"))
+
+                let kind = kind.compile_bytecode();
+
+                Box::from(format!("{CMD_DCLR_VAR}{kind}{name}{value}"))
+            }
+            Self::AssignVariable { name, value } => {
+                if !name.is_string() {
+                    panic!("Variable name should be string");
+                }
+                let name = name.compile_bytecode();
+                let value = value.compile_bytecode();
+                Box::from(format!("{CMD_ASGN_VAR}{name}{value}"))
+            }
+            Self::Puts { value } => {
+                let value = value.compile_bytecode();
+                Box::from(format!("{CMD_PUTS}{value}"))
             }
             _ => todo!(),
         }
+    }
+}
+
+pub trait Compilable {
+    fn compile_bytecode(&self) -> Box<str>;
+}
+
+impl Compilable for [Command] {
+    fn compile_bytecode(&self) -> Box<str> {
+        self.iter()
+            .map(|c| c.compile_bytecode().to_string())
+            .collect::<Vec<String>>()
+            .join("")
+            .into()
     }
 }

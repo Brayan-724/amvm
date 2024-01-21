@@ -35,6 +35,16 @@ impl Runtime {
     pub fn eval(&mut self, expr: &CommandExpression) -> Value {
         match expr {
             CommandExpression::Value(v) => v.clone(),
+            CommandExpression::Var(var) => {
+                let var = var.as_string().expect("Variable name should be string");
+                self.context
+                    .read()
+                    .unwrap()
+                    .variables
+                    .get(var)
+                    .cloned()
+                    .unwrap_or(Value::Undefined)
+            }
             CommandExpression::Addition(a, b) => {
                 let a = self.eval(a);
                 let b = self.eval(b);
@@ -56,19 +66,51 @@ impl Runtime {
         self.pointer += 1;
 
         match cmd {
-            Command::DeclareVariable { name, value } => {
-                let name = name.to_string();
+            Command::DeclareVariable { name, value, .. } => {
+                let name = name
+                    .as_string()
+                    .expect("Variable name should be string")
+                    .clone();
                 let value = if let Some(value) = value {
-                    self.eval(value.as_ref())
+                    self.eval(value)
                 } else {
                     Value::Undefined
                 };
                 let mut context = self.context.write().unwrap();
                 context.variables.insert(name, value);
             }
+            Command::AssignVariable { name, value } => {
+                let name = name
+                    .as_string()
+                    .expect("Variable name should be string")
+                    .clone();
+                let value = self.eval(value);
+                let mut context = self.context.write().unwrap();
+                context.variables.insert(name, value);
+            }
+            Command::Puts { value } => {
+                let value = self.eval(value);
+                match value {
+                    Value::Undefined => print!("undefined"),
+                    Value::String(v) => print!("{v}"),
+                    Value::U8(v) => print!("{v}"),
+                    Value::I16(v) => print!("{v}"),
+                    Value::F32(v) => print!("{v}"),
+                }
+            }
             Command::Evaluate { expr } => {
                 self.eval(expr);
             }
+        }
+    }
+
+    pub fn run(&mut self) {
+        loop {
+            if self.pointer >= self.ast.len() {
+                break;
+            }
+
+            self.step();
         }
     }
 }
