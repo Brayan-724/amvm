@@ -1,0 +1,5 @@
+[
+  Puts(
+        value: Value(String("Hello World!\n"))
+    )
+]

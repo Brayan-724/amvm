@@ -1,7 +1,6 @@
 use crate::{
     Command, CommandExpression, Runtime, Value, VariableKind, AMVM_HEADER, CMD_DCLR_VAR, CMD_PUTS,
-    EXPR_VALUE, EXPR_VAR, VALUE_F32, VALUE_I16, VALUE_STRING, VALUE_U8, VALUE_UNDEFINED, VAR_CONST,
-    VAR_LET,
+    EXPR_VAR, VALUE_F32, VALUE_I16, VALUE_STRING, VALUE_U8, VALUE_UNDEFINED, VAR_CONST, VAR_LET,
 };
 use std::path::Path;
 
@@ -20,6 +19,14 @@ impl Parser {
             bytes: content.into_boxed_slice(),
             pointer: 0,
         })
+    }
+
+    /// Read file and create parser from it's bytes
+    pub fn from_string(path: impl AsRef<str>) -> Parser {
+        Parser {
+            bytes: Box::from(path.as_ref().as_bytes()),
+            pointer: 0,
+        }
     }
 
     fn process_value(&mut self) -> Option<Value> {

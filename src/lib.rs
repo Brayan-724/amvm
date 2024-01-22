@@ -4,6 +4,9 @@ pub use runtime::Runtime;
 mod parser;
 pub use parser::Parser;
 
+#[cfg(feature = "useron")]
+use serde::{Deserialize, Serialize};
+
 pub static AMVM_HEADER: &'static str = "\x08\x48\x30"; // Arbitrary value for sign (0x0B4B30)
 pub static COMMAND_SEPARATOR: char = '\0';
 
@@ -26,6 +29,7 @@ pub static VALUE_I16: char = '\x07';
 pub static VALUE_F32: char = '\x08';
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "useron", derive(Serialize, Deserialize))]
 pub enum Value {
     Undefined,
     String(String),
@@ -105,6 +109,7 @@ impl Value {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "useron", derive(Serialize, Deserialize))]
 pub enum CommandExpression {
     Value(Value),
     Var(Value),
@@ -132,6 +137,7 @@ impl CommandExpression {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "useron", derive(Serialize, Deserialize))]
 pub enum VariableKind {
     Const,
     Let,
@@ -147,6 +153,7 @@ impl VariableKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "useron", derive(Serialize, Deserialize))]
 pub enum Command {
     DeclareVariable {
         name: Value,
