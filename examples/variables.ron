@@ -1,0 +1,22 @@
+[
+    /// a = 1
+    DeclareVariable(
+        name: String("a"),
+        kind: Const,
+        value: Value(U8(1))
+    ),
+    /// b = 2
+    DeclareVariable(
+        name: String("b"),
+        kind: Const,
+        value: Value(U8(2))
+    ),
+    /// c = a + b
+    DeclareVariable(
+        name: String("c"),
+        kind: Const,
+        value: Addition(Var(String("a")), Var(String("b")))
+    ),
+
+    Puts( value: Var(String("c")) )
+]

@@ -1,5 +1,5 @@
 [
   Puts(
-        value: Value(String("Hello World!\n"))
-    )
+    value: Value(String("Hello World!\n"))
+  )
 ]
