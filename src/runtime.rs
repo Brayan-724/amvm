@@ -71,11 +71,8 @@ impl Runtime {
                     .as_string()
                     .expect("Variable name should be string")
                     .clone();
-                let value = if let Some(value) = value {
-                    self.eval(value)
-                } else {
-                    Value::Undefined
-                };
+                let value = self.eval(value);
+
                 let mut context = self.context.write().unwrap();
                 context.variables.insert(name, value);
             }

@@ -4,6 +4,8 @@ pub use runtime::Runtime;
 mod parser;
 pub use parser::Parser;
 
+mod error;
+
 #[cfg(feature = "useron")]
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +38,18 @@ pub enum Value {
     U8(u8),
     I16(i16),
     F32(f32),
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Undefined => f.write_str("undefined"),
+            Self::String(v) => f.write_fmt(format_args!("\"{v}\"")),
+            Self::U8(v) => f.write_fmt(format_args!("{v}u8")),
+            Self::I16(v) => f.write_fmt(format_args!("{v}i16")),
+            Self::F32(v) => f.write_fmt(format_args!("{v}f32")),
+        }
+    }
 }
 
 impl Into<Value> for &str {
@@ -116,6 +130,16 @@ pub enum CommandExpression {
     Addition(Box<CommandExpression>, Box<CommandExpression>),
 }
 
+impl std::fmt::Display for CommandExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Value(v) => v.fmt(f),
+            Self::Var(v) => f.write_fmt(format_args!("Var({v})")),
+            Self::Addition(a, b) => f.write_fmt(format_args!("{a} + {b}")),
+        }
+    }
+}
+
 impl Into<Option<Box<CommandExpression>>> for CommandExpression {
     fn into(self) -> Option<Box<CommandExpression>> {
         Some(Box::from(self))
@@ -143,6 +167,15 @@ pub enum VariableKind {
     Let,
 }
 
+impl std::fmt::Display for VariableKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VariableKind::Const => f.write_str("Const"),
+            VariableKind::Let => f.write_str("Let"),
+        }
+    }
+}
+
 impl VariableKind {
     pub fn compile_bytecode(&self) -> char {
         match self {
@@ -157,7 +190,7 @@ impl VariableKind {
 pub enum Command {
     DeclareVariable {
         name: Value,
-        value: Option<CommandExpression>,
+        value: CommandExpression,
         kind: VariableKind,
     },
     AssignVariable {
@@ -181,22 +214,17 @@ impl Command {
             Self::Evaluate { .. } => CMD_EVAL,
         }
     }
-
-    pub fn compile_bytecode(&self) -> Box<str> {
+}
+impl Compilable for Command {
+    fn compile_bytecode(&self) -> Box<str> {
         match self {
             Self::DeclareVariable { name, value, kind } => {
                 if !name.is_string() {
                     panic!("Variable name should be string");
                 }
-                let name = name.compile_bytecode();
-
-                let value = if let Some(value) = value {
-                    value.compile_bytecode()
-                } else {
-                    CommandExpression::Value(Value::Undefined).compile_bytecode()
-                };
-
                 let kind = kind.compile_bytecode();
+                let name = name.compile_bytecode();
+                let value = value.compile_bytecode();
 
                 Box::from(format!("{CMD_DCLR_VAR}{kind}{name}{value}"))
             }
@@ -213,6 +241,21 @@ impl Command {
                 Box::from(format!("{CMD_PUTS}{value}"))
             }
             _ => todo!(),
+        }
+    }
+}
+
+impl std::fmt::Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DeclareVariable { name, value, kind } => {
+                f.write_fmt(format_args!("DeclareVariable({kind}, {name}, {value})"))
+            }
+            Self::AssignVariable { name, value } => {
+                f.write_fmt(format_args!("AssignVariable({name}, {value})"))
+            }
+            Self::Puts { value } => f.write_fmt(format_args!("Puts({value})")),
+            Self::Evaluate { expr } => f.write_fmt(format_args!("Evaluate({expr})")),
         }
     }
 }

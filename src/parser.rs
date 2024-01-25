@@ -1,8 +1,12 @@
+use crate::error::{error_msgs, ParserError};
+use crate::{Command, CommandExpression, Runtime, Value, VariableKind};
 use crate::{
-    Command, CommandExpression, Runtime, Value, VariableKind, AMVM_HEADER, CMD_DCLR_VAR, CMD_PUTS,
-    EXPR_VAR, VALUE_F32, VALUE_I16, VALUE_STRING, VALUE_U8, VALUE_UNDEFINED, VAR_CONST, VAR_LET,
+    AMVM_HEADER, CMD_DCLR_VAR, CMD_PUTS, EXPR_ADD, EXPR_VAR, VALUE_F32, VALUE_I16, VALUE_STRING,
+    VALUE_U8, VALUE_UNDEFINED, VAR_CONST, VAR_LET,
 };
 use std::path::Path;
+
+const CMD_VERBOSE: bool = true;
 
 #[derive(Debug, Clone)]
 pub struct Parser {
@@ -29,17 +33,17 @@ impl Parser {
         }
     }
 
-    fn process_value(&mut self) -> Option<Value> {
+    fn process_value(&mut self) -> Result<Value, ParserError> {
         let b = &self.bytes[self.pointer];
         self.pointer += 1;
 
         match *b as char {
-            b if b == VALUE_UNDEFINED => Some(Value::Undefined),
+            b if b == VALUE_UNDEFINED => Ok(Value::Undefined),
             b if b == VALUE_U8 => {
                 let b = &self.bytes[self.pointer];
                 self.pointer += 1;
 
-                Some(Value::U8(*b))
+                Ok(Value::U8(*b))
             }
             b if b == VALUE_I16 => {
                 let b = &self.bytes[self.pointer];
@@ -57,7 +61,7 @@ impl Parser {
                 // b2 -> 0x00FF
                 let num = sign * ((b1 << 8) as u16 + *b2 as u16) as i16;
 
-                Some(Value::I16(num))
+                Ok(Value::I16(num))
             }
             b if b == VALUE_F32 => {
                 let mut carrier = vec![];
@@ -69,7 +73,7 @@ impl Parser {
                         let num = String::from_utf8_lossy(&carrier)
                             .parse::<f32>()
                             .expect("Invalid f32");
-                        break Some(Value::F32(num));
+                        break Ok(Value::F32(num));
                     }
 
                     carrier.push(*b);
@@ -83,7 +87,7 @@ impl Parser {
 
                     if *b == 0 {
                         let s = String::from_utf8_lossy(&carrier);
-                        break Some(Value::String(s.to_string()));
+                        break Ok(Value::String(s.to_string()));
                     }
 
                     carrier.push(*b);
@@ -97,57 +101,76 @@ impl Parser {
                 }
             }
 
-            _ => None,
+            b => Err(ParserError::from_msg(
+                error_msgs::ERROR_UNKNOWN_VALUE_KIND,
+                format!(
+                    "Unrecognized byte: 0x{:02x}. Expected bytes: {:?}",
+                    b as u8,
+                    [
+                        VALUE_UNDEFINED,
+                        VALUE_U8,
+                        VALUE_I16,
+                        VALUE_F32,
+                        VALUE_STRING
+                    ]
+                ),
+                self.pointer - 1,
+            )),
         }
     }
 
-    fn process_expression(&mut self) -> Option<CommandExpression> {
+    fn process_expression(&mut self) -> Result<CommandExpression, ParserError> {
         let b = &self.bytes[self.pointer];
         self.pointer += 1;
 
         match *b as char {
-            b if b == EXPR_VAR => Some(CommandExpression::Var(self.process_value()?)),
+            b if b == EXPR_VAR => Ok(CommandExpression::Var(self.process_value()?)),
+            b if b == EXPR_ADD => Ok(CommandExpression::Addition(
+                self.process_expression()?.into(),
+                self.process_expression()?.into(),
+            )),
             _ => {
                 self.pointer -= 1; // Recover pointer
-                Some(CommandExpression::Value(self.process_value()?))
+                Ok(CommandExpression::Value(self.process_value()?))
             }
         }
     }
 
-    fn step(&mut self) -> Command {
+    fn step(&mut self) -> Result<Command, ParserError> {
         let b = &self.bytes[self.pointer];
         self.pointer += 1;
 
         match *b as char {
             b if b == CMD_DCLR_VAR => {
                 let kind = &self.bytes[self.pointer];
-                self.pointer += 1;
                 let kind = match *kind as char {
                     b if b == VAR_CONST => VariableKind::Const,
                     b if b == VAR_LET => VariableKind::Let,
-                    _ => panic!("Unknown variable kind"),
+                    b => {
+                        return Err(ParserError::from_msg(
+                            error_msgs::ERROR_UNKNOWN_VAR_KIND,
+                            format!("{b}"),
+                            self.pointer,
+                        ))
+                    }
                 };
-                let name = self.process_value().expect("Invalid variable declaration");
-                let value = self
-                    .process_expression()
-                    .expect("Invalid variable declaration");
+                self.pointer += 1;
 
-                Command::DeclareVariable {
-                    name,
-                    kind,
-                    value: Some(value),
-                }
+                let name = self.process_value()?;
+                let value = self.process_expression()?;
+
+                Ok(Command::DeclareVariable { name, kind, value })
             }
-            b if b == CMD_PUTS => Command::Puts {
+            b if b == CMD_PUTS => Ok(Command::Puts {
                 value: self.process_expression().expect("Invalid puts call"),
-            },
+            }),
             _ => {
                 panic!("Unknown command {b}")
             }
         }
     }
 
-    pub fn runtime(&mut self) -> Runtime {
+    pub fn runtime(&mut self) -> Result<Runtime, ParserError> {
         {
             if self.bytes.len() < 4 {
                 panic!("Invalid bytecode sign");
@@ -167,9 +190,14 @@ impl Parser {
                 break;
             }
 
-            cmds.push(self.step());
+            let at = self.pointer;
+            let cmd = self.step()?;
+            if CMD_VERBOSE {
+                println!("{at}: {cmd}");
+            }
+            cmds.push(cmd);
         }
 
-        Runtime::new(cmds)
+        Ok(Runtime::new(cmds))
     }
 }

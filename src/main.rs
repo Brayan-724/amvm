@@ -18,7 +18,13 @@ fn compile(mut args: impl Iterator<Item = String>) {
 fn run(mut args: impl Iterator<Item = String>) {
     let filepath = args.next().expect("Provide file path to the bytecode file");
     let mut parser = Parser::from_filepath(filepath).expect("Can't read file");
-    let mut runtime = parser.runtime();
+    let mut runtime = match parser.runtime() {
+        Ok(a) => a,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1)
+        }
+    };
     runtime.run();
 }
 
@@ -29,9 +35,15 @@ fn jit(mut args: impl Iterator<Item = String>) {
 
     let compiled = commands.compile_bytecode();
     let content = format!("{AMVM_HEADER}{COMMAND_SEPARATOR}{compiled}");
-    
+
     let mut parser = Parser::from_string(content);
-    let mut runtime = parser.runtime();
+    let mut runtime = match parser.runtime() {
+        Ok(a) => a,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1)
+        }
+    };
     runtime.run();
 }
 
