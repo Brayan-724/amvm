@@ -1,0 +1,24 @@
+@let $word "ana"
+@let $left 0u8
+@let $right -.$word "length" 1u8
+@let $is_palindrome true
+
+@loop {
+  @if >=$left $right {
+    @break
+  }
+
+  @if !=.$word $left .$word $right {
+    =$is_palindrome false
+    @break
+  }
+
+  =$left +$left 1u8
+  =$right -$right 1u8
+}
+
+@if $is_palindrome {
+  @puts "Is palindrome"
+} @else {
+  @puts "Is not palindrome"
+}

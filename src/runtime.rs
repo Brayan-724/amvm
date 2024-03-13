@@ -1,113 +1,80 @@
-use crate::{Command, CommandExpression, Value};
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+mod commands;
+mod error;
+mod expr;
+mod result;
+mod scope;
+pub mod variable;
 
-#[derive(Debug, Clone, PartialEq)]
+pub use error::AmvmError;
+pub use result::{AmvmPropagate, AmvmResult};
+
+use crate::{AmvmHeader, AmvmScope, Command, Value};
+use std::io::Write;
+use std::{collections::HashMap, sync::Arc};
+
+use self::variable::AmvmVariable;
+
+#[derive(Debug, Clone)]
 pub struct Context {
-    variables: HashMap<String, Value>,
+    // TODO: Create struct for variables that contains a reference
+    // counter, this will help garbage collection.
+    variables: HashMap<String, AmvmVariable>,
 }
+
 impl Context {
     pub fn new() -> Self {
         Self {
             variables: HashMap::new(),
         }
     }
+
+    pub fn create_sub(&self) -> Self {
+        Self {
+            variables: self.variables.clone(),
+        }
+    }
+
+    pub fn get_variable(&self, name: &String) -> &AmvmVariable {
+        self.variables.get(name).unwrap_or_else(|| {
+            let backtrace = format!("{}", std::backtrace::Backtrace::capture());
+            let backtrace = backtrace
+                .split("\n")
+                .filter(|l| {
+                    !l.contains("at /rustc/")
+                        && !l.contains(": std::")
+                        && !l.contains(": core::")
+                        && !l.contains(": _")
+                })
+                .collect::<Vec<&str>>()
+                .join("\n");
+
+            let _ = std::io::stdout().lock().flush();
+
+            eprintln!(
+                "\n\x1b[31mERROR: Variable {name:?} is not defined.\n\x1b[2m{backtrace}\x1b[0m"
+            );
+            std::process::exit(1)
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Runtime {
-    ast: Vec<Command>,
-    pointer: usize,
-    context: Arc<RwLock<Context>>,
+    scope: AmvmScope,
 }
 
 impl Runtime {
-    pub fn new(ast: Vec<Command>) -> Self {
+    pub fn new(header: AmvmHeader, ast: Vec<Command>) -> Self {
         Self {
-            ast,
-            pointer: 0,
-            context: Arc::new(RwLock::new(Context::new())),
+            scope: AmvmScope::new(&Arc::new(header), ast, None),
         }
     }
 
-    pub fn eval(&mut self, expr: &CommandExpression) -> Value {
-        match expr {
-            CommandExpression::Value(v) => v.clone(),
-            CommandExpression::Var(var) => {
-                let var = var.as_string().expect("Variable name should be string");
-                self.context
-                    .read()
-                    .unwrap()
-                    .variables
-                    .get(var)
-                    .cloned()
-                    .unwrap_or(Value::Undefined)
-            }
-            CommandExpression::Addition(a, b) => {
-                let a = self.eval(a);
-                let b = self.eval(b);
-
-                match (a, b) {
-                    (Value::Undefined, Value::Undefined) => Value::Undefined,
-                    (Value::U8(a), Value::U8(b)) => Value::U8(a + b),
-                    (Value::I16(a), Value::I16(b)) => Value::I16(a + b),
-                    (Value::F32(a), Value::F32(b)) => Value::F32(a + b),
-                    (Value::String(a), Value::String(b)) => Value::String(format!("{a}{b}")),
-                    _ => Value::Undefined,
-                }
-            }
+    pub fn run(&mut self) -> AmvmResult {
+        for cmd in self.scope.body.clone().iter() {
+            commands::eval(&mut self.scope, cmd)?;
         }
-    }
 
-    pub fn step(&mut self) {
-        let cmd = &self.ast[self.pointer].clone();
-        self.pointer += 1;
-
-        match cmd {
-            Command::DeclareVariable { name, value, .. } => {
-                let name = name
-                    .as_string()
-                    .expect("Variable name should be string")
-                    .clone();
-                let value = self.eval(value);
-
-                let mut context = self.context.write().unwrap();
-                context.variables.insert(name, value);
-            }
-            Command::AssignVariable { name, value } => {
-                let name = name
-                    .as_string()
-                    .expect("Variable name should be string")
-                    .clone();
-                let value = self.eval(value);
-                let mut context = self.context.write().unwrap();
-                context.variables.insert(name, value);
-            }
-            Command::Puts { value } => {
-                let value = self.eval(value);
-                match value {
-                    Value::Undefined => print!("undefined"),
-                    Value::String(v) => print!("{v}"),
-                    Value::U8(v) => print!("{v}"),
-                    Value::I16(v) => print!("{v}"),
-                    Value::F32(v) => print!("{v}"),
-                }
-            }
-            Command::Evaluate { expr } => {
-                self.eval(expr);
-            }
-        }
-    }
-
-    pub fn run(&mut self) {
-        loop {
-            if self.pointer >= self.ast.len() {
-                break;
-            }
-
-            self.step();
-        }
+        Ok(Value::Null)
     }
 }

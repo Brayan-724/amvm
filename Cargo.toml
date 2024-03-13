@@ -2,11 +2,4 @@
 name = "amvm"
 version = "0.1.0"
 edition = "2021"
-
-[features]
-default = ["useron"]
-useron = ["dep:ron", "dep:serde"]
-
-[dependencies]
-ron = { version = "0.8.1", optional = true }
-serde = { version = "1.0.195", features = ["derive"], optional = true }
+default-run = "amvm"

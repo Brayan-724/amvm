@@ -17,9 +17,6 @@ The goal is to convert javascript to this bytecode and make it more performant, 
 ### Use it
 Working on!
 
-### Bytecode
-Working on!
-
 ### Collaborate
 This project is very young, so it will be very things to change. If you want to collaborate (I appreciate it) you need to know the followings:
 
@@ -32,6 +29,35 @@ Here's all about internals for parse, generate and run the bytecode, this will b
 
 #### [`main.rs`]
 This is where the final-user cli is found, so this pretends to have _IO_ operations. Published as `amvm` to run the bytecode output files.
+
+### Bytecode
+```
+AMVM_HEADER       = "\x08\x48\x30" // Arbitrary value for sign (0B4B30)
+COMMAND_SEPARATOR = '\0'
+
+CMD_DCLR_VAR	  = '\x01'
+CMD_ASGN_VAR	  = '\x0D'
+CMD_PUTS	      = '\x0E'
+CMD_EVAL	      = '\x02'
+
+VAR_CONST	      = '\x0B'
+VAR_LET	          = '\x0C'
+
+EXPR_VALUE	      = '\x03'
+EXPR_VAR	      = '\x0A'
+EXPR_ADD	      = '\x09'
+
+VALUE_UNDEFINED	  = '\x04'
+VALUE_STRING	  = '\x05'
+VALUE_U8	      = '\x06'
+VALUE_I16	      = '\x07'
+VALUE_F32	      = '\x08'
+```
+
+#### (CMD_DCLR_VAR) Command Declaration Variable
+Declare a variable to the current context.
+
+``
 
 ## Useful links:
 - [Brayan-724/js-ast](https://github.com/Brayan-724/js-ast)

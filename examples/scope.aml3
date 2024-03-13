@@ -1,0 +1,13 @@
+@let $x 0u8
+
+{
+  @const $y "Hello Y!"
+
+  =$x +$x 1u8
+
+  @puts +"Inner X = " $x
+  @puts +"\nInner Y = " $y
+}
+
+@puts +"\nX = " $x
+@puts +"\nY = " $y
