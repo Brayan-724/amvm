@@ -1,5 +1,5 @@
-use crate::error::error_msgs;
-use crate::{Compilable, Parser, ParserError, Value};
+use crate::parser::ParserResult;
+use crate::{parser, Compilable, Parser, Value};
 
 pub static EXPR_VALUE: char = '\x11';
 pub static EXPR_VAR: char = '\x12';
@@ -59,7 +59,7 @@ impl std::fmt::Display for CommandExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Value(v) => (v as &dyn std::fmt::Display).fmt(f),
-            Self::Var(v) => f.write_fmt(format_args!("Var({v})")),
+            Self::Var(v) => f.write_fmt(format_args!("${v}")),
             Self::Property(a, b) => f.write_fmt(format_args!("({a})[{b}]")),
 
             Self::Addition(a, b) => f.write_fmt(format_args!("{a} + {b}")),
@@ -76,16 +76,17 @@ impl Into<Option<Box<CommandExpression>>> for CommandExpression {
 }
 
 impl CommandExpression {
-    pub fn visit_cond(parser: &mut Parser) -> Result<Self, ParserError> {
-        let kind = parser
-            .consume()
-            .ok_or_else(|| parser.error_corrupt(error_msgs::ERROR_INVALID_VALUE_DECL, "", 1))?;
+    pub fn visit_cond<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
+        let (parser, kind) = parser::anychar(parser)
+            .map_err(parser.nom_err_with_context("Expected conditional kind"))?;
 
-        let mut condition = |kind: BinaryConditionKind| -> Result<Self, ParserError> {
-            Ok(CommandExpression::BinaryCondition(
-                kind,
-                CommandExpression::visit(parser)?.into(),
-                CommandExpression::visit(parser)?.into(),
+        let condition = |kind: BinaryConditionKind| -> ParserResult<'a, Self> {
+            let (parser, a) = CommandExpression::visit(parser)?;
+            let (parser, b) = CommandExpression::visit(parser)?;
+
+            Ok((
+                parser,
+                CommandExpression::BinaryCondition(kind, a.into(), b.into()),
             ))
         };
 
@@ -101,40 +102,50 @@ impl CommandExpression {
             k if k == EXPR_COND_EQUAL => condition(BinaryConditionKind::Equal),
             k if k == EXPR_COND_NOT_EQUAL => condition(BinaryConditionKind::NotEqual),
 
-            _ => Err(parser.error_corrupt(
-                error_msgs::ERROR_UNKNOWN_VALUE_KIND,
-                format!("{kind:?}"),
-                1,
+            _ => Err(parser.error(
+                parser::VerboseErrorKind::Context("Unknown conditional kind"),
+                true,
             )),
         }
     }
 
-    pub fn visit(parser: &mut Parser) -> Result<Self, ParserError> {
-        let b = parser.consume().ok_or_else(|| {
-            parser.error_corrupt(
-                error_msgs::ERROR_INVALID_HEADER_DECL,
-                "Can't get type casting kind",
-                1,
-            )
-        })?;
+    pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
+        let (parser, b) = parser::anychar(parser)
+            .map_err(parser.nom_err_with_context("Expected expression kind"))?;
 
         match b {
-            b if b == EXPR_VAR => Ok(CommandExpression::Var(Value::visit(parser)?)),
-            b if b == EXPR_ADD => Ok(CommandExpression::Addition(
-                CommandExpression::visit(parser)?.into(),
-                CommandExpression::visit(parser)?.into(),
-            )),
-            b if b == EXPR_SUB => Ok(CommandExpression::Substraction(
-                CommandExpression::visit(parser)?.into(),
-                CommandExpression::visit(parser)?.into(),
-            )),
-            b if b == EXPR_PROP => Ok(CommandExpression::Property(
-                CommandExpression::visit(parser)?.into(),
-                CommandExpression::visit(parser)?.into(),
-            )),
-            b if b == EXPR_VALUE => Ok(CommandExpression::Value(Value::visit(parser)?)),
+            b if b == EXPR_VAR => {
+                let (parser, value) = Value::visit(parser)?;
+                Ok((parser, CommandExpression::Var(value)))
+            }
+            b if b == EXPR_ADD => {
+                let (parser, a) = CommandExpression::visit(parser)?;
+                let (parser, b) = CommandExpression::visit(parser)?;
+
+                Ok((parser, CommandExpression::Addition(a.into(), b.into())))
+            }
+            b if b == EXPR_SUB => {
+                let (parser, a) = CommandExpression::visit(parser)?;
+                let (parser, b) = CommandExpression::visit(parser)?;
+
+                Ok((parser, CommandExpression::Substraction(a.into(), b.into())))
+            }
+            b if b == EXPR_PROP => {
+                let (parser, a) = CommandExpression::visit(parser)?;
+                let (parser, b) = CommandExpression::visit(parser)?;
+
+                Ok((parser, CommandExpression::Property(a.into(), b.into())))
+            }
+            b if b == EXPR_VALUE => {
+                let (parser, value) = Value::visit(parser)?;
+
+                Ok((parser, CommandExpression::Value(value)))
+            }
             b if b == EXPR_COND => Self::visit_cond(parser),
-            _ => Err(parser.error_corrupt("Unknown expression kind.", format!("{b:?}"), 1)),
+            _ => Err(parser.error(
+                parser::VerboseErrorKind::Context("Unknown expression kind"),
+                true,
+            )),
         }
     }
 }

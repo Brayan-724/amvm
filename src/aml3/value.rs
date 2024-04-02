@@ -1,63 +1,73 @@
-use crate::Value;
-
-use super::{Aml3Error, Aml3Parser};
+use crate::{parser, Parser, ParserResult, Value};
 
 pub struct Aml3Value;
 
 impl Aml3Value {
-    fn visit_number(parser: &mut Aml3Parser) -> Result<Value, Aml3Error> {
-        let first = parser
-            .consume()
-            .ok_or_else(|| unreachable!("This is verified by the visit root"))?;
+    fn visit_number<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
+        let (parser, first) = parser::anychar(parser)
+            .map_err(Parser::map_nom_err)
+            .expect("This is verified by the visit root");
 
-        let mut str = first.to_string();
+        let str = first.to_string();
 
+        let mut parser = parser;
         loop {
-            let a = parser
-                .consume_oneline()
-                .ok_or_else(|| parser.error("Untermited number"))?;
+            let (_parser, b) =
+                parser::anychar(parser).map_err(parser.nom_err_with_context("No number size"))?;
+            parser = _parser;
 
-            match a {
-                b @ 'u' | b @ 'i' => {
-                    let size = parser
-                        .consume_until(' ')
-                        .ok_or_else(|| parser.error_expected("number size", None))?;
+            match b {
+                'u' | 'i' => {
+                    let (parser, size) = parser::take_until_space(parser)
+                        .map_err(parser.nom_err_with_context("Expected number size"))?;
 
-                    return match &size as &str {
+                    return match size.value {
                         "8" => {
                             if b == 'u' {
-                                Ok(Value::U8(str.parse::<u8>().map_err(|e| {
-                                    parser.error(format!("Cannot parse u8: {e}"))
-                                })?))
+                                let value = str.parse::<u8>().map_err(|_| {
+                                    parser.error(
+                                        parser::VerboseErrorKind::Context("Can't parse number"),
+                                        true,
+                                    )
+                                })?;
+
+                                Ok((parser, Value::U8(value)))
                             } else {
-                                todo!()
+                                todo!("Number: Integer 8")
                             }
                         }
 
-                        _ => Err(parser.error("Unknown number size: {size}")),
+                        _ => Err(parser.error(
+                            parser::VerboseErrorKind::Context("Unknown number size"),
+                            true,
+                        )),
                     };
                 }
-                _ => todo!("{a:?}"),
+                _ => todo!("{b:?}"),
             }
         }
     }
 
-    fn visit_string(parser: &mut Aml3Parser) -> Result<Value, Aml3Error> {
-        parser.consume().expect("Already verified");
-
-        // let str = parser
-        //     .consume_until_oneline('"')
-        //     .ok_or_else(|| parser.error("Malformed string"))?;
+    fn visit_string<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
+        let (parser, _) = parser::anychar(parser)
+            .map_err(Parser::map_nom_err)
+            .expect("Already verified");
 
         let mut str = String::new();
         let mut escaping = false;
+        let mut parser = parser;
         loop {
-            let c = parser
-                .consume()
-                .ok_or_else(|| parser.error("Untermited string"))?;
+            let (_parser, c) = parser::anychar(parser)
+                .map_err(parser.nom_err_with_context("Unterminated string"))?;
+            parser = _parser;
 
             match c {
-                '\n' => return Err(parser.error("Unterminated string")),
+                '\n' => {
+                    return Err(parser.error(
+                        parser::VerboseErrorKind::Context("Unterminated string"),
+                        true,
+                    ))
+                }
                 '\\' if escaping => str.push('\\'),
                 '"' if escaping => str.push('"'),
                 'n' if escaping => str.push('\n'),
@@ -74,38 +84,33 @@ impl Aml3Value {
             }
         }
 
+        // XXX: Why? I don't remember
         // Consume following character expect for new line, supposed to be space
-        let sp = parser.consume_oneline();
-        if !matches!(sp, Some(' ') | None) {
-            return Err(parser.error_expected("space", Some(format!("{:?}", sp.unwrap()))));
-        }
+        // let (_, _) = parser::take_space(parser)
+        //     .map_err(parser.nom_err_with_context("Should be space or newline after a string"))?;
 
-        Ok(Value::String(str))
+        Ok((parser, Value::String(str)))
     }
 
-    fn visit_bool(parser: &mut Aml3Parser) -> Result<Value, Aml3Error> {
-        let v = parser
-            .peek_until(' ')
-            .ok_or_else(|| parser.error_expected("boolean value: true or false", None))?;
+    fn visit_bool<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
+        let (parser, value) = parser::take_until_space(parser)
+            .map_err(parser.nom_err_with_context("Unexpected EOF"))?;
 
-        match &v as &str {
-            "true" => {
-                parser.consume_until('\n');
-                Ok(Value::Bool(true))
-            }
-            "false" => {
-                parser.consume_until('\n');
-                Ok(Value::Bool(false))
-            }
+        match value.value {
+            "true" => Ok((parser, Value::Bool(true))),
+            "false" => Ok((parser, Value::Bool(false))),
 
-            _ => Err(parser.error_expected("boolean value: true or false", Some(v))),
+            _ => Err(parser.error(
+                parser::VerboseErrorKind::Context("Expected true or false"),
+                true,
+            )),
         }
     }
 
-    pub fn visit(parser: &mut Aml3Parser) -> Result<Value, Aml3Error> {
-        let first = parser
-            .peek(0)
-            .ok_or_else(|| parser.error_expected("value", None))?;
+    pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
+        let first = parser.peek(0).ok_or_else(|| {
+            parser.error(parser::VerboseErrorKind::Context("Unexpected EOF"), false)
+        })?;
 
         match first {
             b if b.is_digit(10) => Self::visit_number(parser),
@@ -113,7 +118,7 @@ impl Aml3Value {
 
             't' | 'f' => Self::visit_bool(parser),
 
-            _ => Err(parser.error(format!("Unknown token: {first:?}"))),
+            _ => Err(parser.error(parser::VerboseErrorKind::Context("Unknown value"), true)),
         }
     }
 }

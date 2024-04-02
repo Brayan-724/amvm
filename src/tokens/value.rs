@@ -1,6 +1,6 @@
-use crate::error::error_msgs;
+use crate::parser::{self, anychar, ParserResult};
 use crate::COMMAND_SEPARATOR;
-use crate::{CommandExpression, Compilable, Parser, ParserError};
+use crate::{CommandExpression, Compilable, Parser};
 
 pub static VALUE_UNDEFINED: char = '\x31';
 pub static VALUE_BOOL: char = '\x32';
@@ -108,72 +108,44 @@ impl Into<Option<Box<CommandExpression>>> for Value {
 }
 
 impl Value {
-    fn visit_u8(parser: &mut Parser) -> Option<u8> {
-        let b = parser.consume()?;
-        Some(b as u8)
+    fn visit_u8<'a>(parser: Parser<'a>) -> ParserResult<'a, u8> {
+        let (parser, value) = anychar(parser)?;
+
+        Ok((parser, value as u8))
     }
 
-    fn visit_u16(parser: &mut Parser) -> Option<u16> {
-        let b1 = parser.consume()? as u16;
-        let b2 = parser.consume()? as u16;
+    fn visit_u16<'a>(parser: Parser<'a>) -> ParserResult<'a, u16> {
+        let (parser, b1) = anychar(parser)?;
+        let (parser, b2) = anychar(parser)?;
 
         // b1 -> 0xFF00
         // b2 -> 0x00FF
-        Some((b1 << 8) + b2)
+        Ok((parser, ((b1 as u16) << 8) + b2 as u16))
     }
 
-    pub fn visit(parser: &mut Parser) -> Result<Self, ParserError> {
-        let b = parser.consume().ok_or_else(|| {
-            parser.error_corrupt(
-                error_msgs::ERROR_INVALID_VALUE_DECL,
-                "Can't get value kind",
-                1,
-            )
-        })?;
+    pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
+        let (parser, b) =
+            parser::anychar(parser).map_err(parser.nom_err_with_context("Expected value kind"))?;
 
-        match b {
-            b if b == VALUE_UNDEFINED => Ok(Value::Null),
-            b if b == VALUE_BOOL => Ok(Value::Bool(
-                parser.consume().ok_or_else(|| {
-                    parser.error_corrupt(
-                        error_msgs::ERROR_INVALID_VALUE_DECL,
-                        format!("Can't get bool value"),
-                        1,
-                    )
-                })? == '\x01',
-            )),
+        let (parser, value) = match b {
+            b if b == VALUE_UNDEFINED => (parser, Value::Null),
+            b if b == VALUE_BOOL => {
+                let (parser, value) = anychar(parser)
+                    .map_err(parser.nom_err_with_context("Expected boolean value"))?;
+                (parser, Value::Bool(value == '\x01'))
+            }
             b if b == VALUE_U8 => {
-                let b = Value::visit_u8(parser).ok_or_else(|| {
-                    parser.error_corrupt(
-                        error_msgs::ERROR_INVALID_VALUE_DECL,
-                        "Can't get value on u8",
-                        0,
-                    )
-                })?;
-
-                Ok(Value::U8(b))
+                let (parser, b) = Value::visit_u8(parser)?;
+                (parser, Value::U8(b))
             }
             b if b == VALUE_I16 => {
-                let sign = parser.consume().ok_or_else(|| {
-                    parser.error_corrupt(
-                        error_msgs::ERROR_INVALID_VALUE_DECL,
-                        "Can't get sign on i16",
-                        1,
-                    )
-                })? as u8;
+                let (parser, sign) = anychar(parser)?;
+                let sign: i16 = if sign == '\x01' { 1 } else { -1 };
 
-                let sign: i16 = if sign == 1 { 1 } else { -1 };
+                let (parser, num) = Value::visit_u16(parser)?;
 
-                let num = Value::visit_u16(parser).ok_or_else(|| {
-                    parser.error_corrupt(
-                        error_msgs::ERROR_INVALID_VALUE_DECL,
-                        "Can't get value on i16",
-                        0,
-                    )
-                })? as i16;
-
-                let num = sign * num;
-                Ok(Value::I16(num))
+                let num = sign * num as i16;
+                (parser, Value::I16(num))
             }
             // TODO: Rework this for safe parse and serialize.
             // Now it can't fail with numbers like `0xFF00`
@@ -182,79 +154,64 @@ impl Value {
             b if b == VALUE_F32 => {
                 let mut carrier = vec![];
                 loop {
-                    let b = parser.consume().ok_or_else(|| {
-                        parser.error_corrupt(
-                            error_msgs::ERROR_INVALID_VALUE_DECL,
-                            "Can't get value on f32",
-                            1,
-                        )
-                    })? as u8;
+                    let (parser, b) = anychar(parser)?;
+                    // "Can't get value on f32",
 
-                    if b == 0 {
+                    if b == '\x00' {
                         let num =
                             String::from_utf8_lossy(&carrier)
                                 .parse::<f32>()
                                 .map_err(|err| {
-                                    parser.error(
-                                        error_msgs::ERROR_INVALID_VALUE_DECL,
-                                        format!("Can't parse f32 value. \nCaused by {err}"),
-                                        0,
-                                    )
+                                    // format!("Can't parse f32 value. \nCaused by {err}"),
+                                    parser::Err::Failure(parser::VerboseError {
+                                        errors: vec![(
+                                            parser,
+                                            parser::VerboseErrorKind::Context(
+                                                "Can't parser f32 value",
+                                            ),
+                                        )],
+                                    })
                                 })?;
-                        break Ok(Value::F32(num));
+                        break (parser, Value::F32(num));
                     }
 
-                    carrier.push(b);
+                    carrier.push(b as u8);
                 }
             }
             b if b == VALUE_STRING => {
                 let mut carrier = vec![];
+                let mut parser = parser;
                 loop {
-                    let b = parser.consume().ok_or_else(|| {
-                        parser.error_corrupt(
-                            error_msgs::ERROR_INVALID_VALUE_DECL,
-                            "Can't get value on string",
-                            1,
-                        )
-                    })? as u8;
+                    // "Can't get value on string",
+                    let (_parser, _b) = parser::anychar(parser)?;
+                    let b = _b as u8;
+                    parser = _parser;
 
                     if b == 0 {
                         let s = String::from_utf8_lossy(&carrier);
-                        break Ok(Value::String(s.to_string()));
+                        break (parser, Value::String(s.to_string()));
                     }
 
-                    carrier.push(b);
-
                     if b == 255 {
-                        let b = parser.consume().ok_or_else(|| {
-                            parser.error_corrupt(
-                                error_msgs::ERROR_INVALID_VALUE_DECL,
-                                "Can't get escaped value on string",
-                                0,
-                            )
-                        })? as u8;
-
-                        carrier.push(b);
+                        // "Can't get escaped value on string",
+                        let (_parser, _b) = anychar(parser)?;
+                        let b = _b as u8;
+                        parser = _parser;
+                        carrier.push(b as u8);
+                    } else {
+                        carrier.push(b as u8);
                     }
                 }
             }
 
-            b => Err(parser.error(
-                error_msgs::ERROR_UNKNOWN_VALUE_KIND,
-                format!(
-                    "Unrecognized byte: 0x{:02x}. Expected bytes: {:?}",
-                    b as u8,
-                    [
-                        VALUE_UNDEFINED,
-                        VALUE_U8,
-                        VALUE_I16,
-                        VALUE_F32,
-                        VALUE_STRING
-                    ]
-                ),
-                1,
-            )),
-        }
+            b => {
+                return Err(parser::Err::Failure(parser::VerboseError {
+                    errors: vec![(parser, parser::VerboseErrorKind::Char(b))],
+                }))
+            }
+        };
+
+        Ok((parser, value))
     }
 
     pub fn is_string(&self) -> bool {

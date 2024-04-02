@@ -10,7 +10,7 @@ macro_rules! compilable_enum {
         }
 
         impl $name {
-            pub fn from_str(v: &str) -> Option<Self> {
+            pub fn from_char(v: char) -> Option<Self> {
                 match v {
                     $($val => Some(Self::$id),)*
                     _ => None
@@ -21,7 +21,7 @@ macro_rules! compilable_enum {
         impl $crate::Compilable for $name {
             fn compile_bytecode(&self) -> Box<str> {
                 Box::from(match self {
-                    $(Self::$id => $val),*
+                    $(Self::$id => $val.to_string()),*
                 })
             }
         }

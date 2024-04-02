@@ -1,6 +1,6 @@
-use crate::error::error_msgs;
+use crate::parser::ParserResult;
 use crate::{
-    CommandExpression, Compilable, Parser, ParserError, Value, VariableKind, COMMAND_SEPARATOR,
+    parser, CommandExpression, Compilable, Parser, Value, VariableKind, COMMAND_SEPARATOR,
 };
 use crate::{VAR_CONST, VAR_LET};
 use std::fmt;
@@ -59,92 +59,103 @@ impl Command {
         }
     }
 
-    pub fn visit_asgn(parser: &mut Parser) -> Result<Self, ParserError> {
-        let name = Value::visit(parser)?;
-        let value = CommandExpression::visit(parser)?;
+    pub fn visit_asgn<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
+        let (parser, name) = Value::visit(parser)?;
+        let (parser, value) = CommandExpression::visit(parser)?;
 
-        Ok(Command::AssignVariable { name, value })
+        Ok((parser, Command::AssignVariable { name, value }))
     }
 
-    pub fn visit_var(parser: &mut Parser) -> Result<Self, ParserError> {
-        let kind = parser.consume().ok_or_else(|| {
-            parser.error_corrupt(
-                error_msgs::ERROR_INVALID_CMD_DECL,
-                "Can't get variable kind",
-                1,
-            )
-        })?;
+    pub fn visit_var<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
+        let (parser, kind) = parser::anychar(parser)
+            .map_err(parser.nom_err_with_context("Expected variable kind"))?;
+
         let kind = match kind {
             b if b == VAR_CONST => VariableKind::Const,
             b if b == VAR_LET => VariableKind::Let,
-            b => {
-                return Err(parser.error_corrupt(
-                    error_msgs::ERROR_UNKNOWN_VAR_KIND,
-                    format!("{b:?}"),
-                    1,
+            _ => {
+                return Err(parser.error(
+                    parser::VerboseErrorKind::Context("Unknown variable kind"),
+                    true,
                 ))
             }
         };
 
-        let name = Value::visit(parser)?;
-        let value = CommandExpression::visit(parser)?;
+        let (parser, name) = Value::visit(parser)?;
+        let (parser, value) = CommandExpression::visit(parser)?;
 
-        Ok(Command::DeclareVariable { name, kind, value })
+        Ok((parser, Command::DeclareVariable { name, kind, value }))
     }
 
-    fn visit_scope(parser: &mut Parser) -> Result<Vec<Self>, ParserError> {
+    fn visit_scope<'a>(parser: Parser<'a>) -> ParserResult<'a, Vec<Self>> {
         let mut body: Vec<Command> = vec![];
+        let mut parser = parser;
         loop {
-            if parser.peek(0) == Some(COMMAND_SEPARATOR) {
-                parser.pointer += 1;
+            let (_parser, v) = parser::opt(parser::char(COMMAND_SEPARATOR))(parser)?;
+            parser = _parser;
+
+            if v.is_some() {
                 break;
             }
 
-            let cmd = Command::visit(parser)?;
+            let (_parser, cmd) = Command::visit(parser)?;
+            parser = _parser;
+
             body.push(cmd);
         }
 
-        Ok(body)
+        Ok((parser, body))
     }
 
-    pub fn visit(parser: &mut Parser) -> Result<Self, ParserError> {
-        let b = parser.consume().ok_or_else(|| {
-            parser.error_corrupt(
-                error_msgs::ERROR_INVALID_CMD_DECL,
-                "Can't get command kind",
-                1,
-            )
-        })?;
+    pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
+        let (parser, b) = parser::anychar(parser)
+            .map_err(parser.nom_err_with_context("Expected command kind"))?;
 
-        match b {
-            b if b == CMD_BREAK => Ok(Command::Break),
-            b if b == CMD_ASGN_VAR => Self::visit_asgn(parser),
-            b if b == CMD_DCLR_VAR => Self::visit_var(parser),
-            b if b == CMD_PUTS => Ok(Command::Puts {
-                value: CommandExpression::visit(parser)?,
-            }),
-            b if b == CMD_SCOPE => Ok(Command::Scope {
-                body: Self::visit_scope(parser)?,
-            }),
-            b if b == CMD_LOOP => Ok(Command::Loop {
-                body: Self::visit_scope(parser)?,
-            }),
-            b if b == CMD_COND => Ok(Command::Conditional {
-                condition: CommandExpression::visit(parser)?,
-                body: Self::visit_scope(parser)?,
-                otherwise: if parser.peek(0) != Some(COMMAND_SEPARATOR) {
-                    Some(Self::visit_scope(parser)?)
+        let (parser, value) = match b {
+            b if b == CMD_BREAK => (parser, Command::Break),
+            b if b == CMD_ASGN_VAR => Self::visit_asgn(parser)?,
+            b if b == CMD_DCLR_VAR => Self::visit_var(parser)?,
+            b if b == CMD_PUTS => {
+                let (parser, value) = CommandExpression::visit(parser)?;
+                (parser, Command::Puts { value })
+            }
+            b if b == CMD_SCOPE => {
+                let (parser, body) = Self::visit_scope(parser)?;
+                (parser, Command::Scope { body })
+            }
+            b if b == CMD_LOOP => {
+                let (parser, body) = Self::visit_scope(parser)?;
+                (parser, Command::Loop { body })
+            }
+            b if b == CMD_COND => {
+                let (parser, condition) = CommandExpression::visit(parser)?;
+                let (parser, body) = Self::visit_scope(parser)?;
+                let (parser, otherwise) = if parser.peek(0) != Some(COMMAND_SEPARATOR) {
+                    let (parser, otherwise) = Self::visit_scope(parser)?;
+                    (parser, Some(otherwise))
                 } else {
-                    let _ = parser.consume();
-                    None
-                },
-            }),
-            _ => Err(parser.error_corrupt(
-                error_msgs::ERROR_INVALID_CMD_DECL,
-                format!("Unknown command {:02x?}", b as u8),
-                1,
-            )),
-        }
+                    let (_, parser) = parser::take(1usize)(parser)?;
+                    (parser, None)
+                };
+
+                (
+                    parser,
+                    Command::Conditional {
+                        condition,
+                        body,
+                        otherwise,
+                    },
+                )
+            }
+            _ => {
+                return Err(parser.error(
+                    parser::VerboseErrorKind::Context("Unknown command kind"),
+                    true,
+                ))
+            }
+        };
+
+        Ok((parser, value))
     }
 }
 impl Compilable for Command {
@@ -204,26 +215,48 @@ impl Compilable for Command {
     }
 }
 
-impl fmt::Display for Command {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn fmt_body(f: &mut fmt::Formatter, body: &Vec<Command>) -> fmt::Result {
-            for (i, cmd) in body.iter().enumerate() {
-                let ib = format!("\x1b[32m{i:03x}\x1b[0m");
-                let cmd = format!("{cmd}");
-                let mut cmd = cmd
-                    .split('\n')
-                    .map(|c| format!(".{ib}{c}\n"))
-                    .collect::<String>();
+#[inline(always)]
+fn write_body<E>(f: impl Fn(String) -> Result<(), E>, body: &Vec<Command>) -> Result<(), E> {
+    for (i, cmd) in body.iter().enumerate() {
+        let ib = format!("\x1b[32m{i:03x}\x1b[0m");
+        let cmd = format!("{cmd}");
+        let mut cmd = cmd
+            .split('\n')
+            .map(|c| format!(".{ib}{c}\n"))
+            .collect::<String>();
 
-                if i == body.len() - 1 {
-                    cmd.pop();
-                }
-                f.write_str(&cmd)?;
-            }
-
-            Ok(())
+        if i == body.len() - 1 {
+            cmd.pop();
         }
 
+        f(cmd)?;
+    }
+
+    Ok(())
+}
+
+#[inline(always)]
+pub fn fmt_body(f: &mut fmt::Formatter, body: &Vec<Command>) -> fmt::Result {
+    for (i, cmd) in body.iter().enumerate() {
+        let ib = format!("\x1b[32m{i:03x}\x1b[0m");
+        let cmd = format!("{cmd}");
+        let mut cmd = cmd
+            .split('\n')
+            .map(|c| format!(".{ib}{c}\n"))
+            .collect::<String>();
+
+        if i == body.len() - 1 {
+            cmd.pop();
+        }
+
+        f.write_str(&cmd)?;
+    }
+
+    Ok(())
+}
+
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Break => f.write_str(": Break"),
             Self::AssignVariable { name, value } => {

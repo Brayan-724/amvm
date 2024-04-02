@@ -1,19 +1,14 @@
-use crate::Value;
-
-use super::{Aml3Error, Aml3Parser};
+use crate::{parser, Parser, ParserResult, Value};
 
 pub struct Aml3Variable;
 
 impl Aml3Variable {
-    pub fn visit(parser: &mut Aml3Parser) -> Result<Value, Aml3Error> {
-        if !parser.consume_static('$') {
-            return Err(parser.error_expected("$", parser.peek(0).map(|c| format!("{c:?}"))));
-        }
+    pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
+        let (parser, _) = parser::char('$')(parser)?;
 
-        let name = parser
-            .consume_until(' ')
-            .ok_or_else(|| parser.error_expected("' '", None))?;
+        let (parser, name) = parser::take_until_space(parser)
+            .map_err(parser.nom_err_with_context("Expected a space after a variable name"))?;
 
-        Ok(Value::String(name))
+        Ok((parser, Value::String(name.value.to_owned())))
     }
 }

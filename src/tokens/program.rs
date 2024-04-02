@@ -1,5 +1,5 @@
-use crate::parser::CMD_VERBOSE;
-use crate::{AmvmHeader, Command, Compilable, Parser, ParserError, Runtime};
+use crate::parser::{self, ParserResult, CMD_VERBOSE};
+use crate::{AmvmHeader, Command, Compilable, Parser, Runtime};
 
 pub struct Program {
     pub header: AmvmHeader,
@@ -14,24 +14,39 @@ impl Program {
         }
     }
 
-    pub fn visit(parser: &mut Parser) -> Result<Self, ParserError> {
-        let header = AmvmHeader::visit(parser)?;
+    pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
+        let (parser, header) = AmvmHeader::visit(parser)?;
+
+        let (_, parser) = parser::take(1usize)(parser)?;
 
         let mut cmds = vec![];
+        let mut parser = parser;
         loop {
-            if parser.pointer >= parser.bytes.len() {
+            if parser.value.is_empty() {
                 break;
             }
 
-            let at = parser.pointer;
-            let cmd = Command::visit(parser)?;
+            let at = parser.pointer_position();
+            let (_parser, cmd) = Command::visit(parser)?;
+            parser = _parser;
+
             if CMD_VERBOSE {
-                println!("{at}: {cmd}");
+                let ib = format!("\x1b[32m{at:03x}\x1b[0m");
+                let cmd = format!("{cmd}");
+                let mut cmd = cmd
+                    .split('\n')
+                    .map(|c| format!(".{ib}{c}\n"))
+                    .collect::<String>();
+
+                cmd.pop();
+
+                println!("{cmd}");
             }
+
             cmds.push(cmd);
         }
 
-        Ok(Self::new(header, cmds))
+        Ok((parser, Self::new(header, cmds)))
     }
 
     pub fn runtime(self) -> Runtime {

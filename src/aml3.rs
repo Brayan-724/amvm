@@ -19,10 +19,13 @@ pub use value::Aml3Value;
 mod variable;
 pub use variable::Aml3Variable;
 
-use crate::Command;
+use crate::{Command, Parser};
 
-pub fn from_str(source: &str) -> Result<Vec<Command>, Aml3Error> {
-    let mut parser = Aml3Parser::new(Box::from(source.as_bytes()));
+pub fn from_str(source: &str) -> Result<Vec<Command>, String> {
+    let parser = Parser::new(source);
+    let (_, c) = Aml3Scope::visit(parser, false)
+        .map_err(Parser::map_nom_err)
+        .map_err(|err| err.to_string())?;
 
-    Aml3Scope::visit(&mut parser, false)
+    Ok(c)
 }

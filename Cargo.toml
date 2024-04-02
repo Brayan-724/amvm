@@ -5,3 +5,6 @@ edition = "2021"
 description = "Apika's My Virtual Machine. A virtual machine with Intermediate Lenguage"
 license = "MIT"
 default-run = "amvm"
+
+[dependencies]
+nom = "7.1.3"

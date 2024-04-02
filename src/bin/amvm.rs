@@ -20,17 +20,17 @@ fn compile(mut args: impl Iterator<Item = String>) -> Result<(), String> {
     Ok(())
 }
 
-fn run(mut args: impl Iterator<Item = String>) {
-    let filepath = args.next().expect("Provide file path to the bytecode file");
-    let mut parser = Parser::from_filepath(filepath).expect("Can't read file");
-    let program = match parser.program() {
-        Ok(a) => a,
-        Err(error) => {
-            eprintln!("{error}");
-            std::process::exit(1)
-        }
-    };
-    program.runtime().run();
+fn run(mut args: impl Iterator<Item = String>) -> Result<(), String> {
+    let source = args.next().expect("Provide file path to the bytecode file");
+    let source = std::fs::read_to_string(&source)
+        .map_err(|err| format!("Can't read file {source}\nCause by: {err}"))?;
+    let parser = Parser::new(&source);
+    let (_, program) =
+        Program::visit(parser).map_err(|err| format!("{:#?}", Parser::map_nom_err(err)))?;
+
+    program.runtime().run().unwrap();
+
+    Ok(())
 }
 
 fn jit(mut args: impl Iterator<Item = String>) -> Result<(), String> {
@@ -48,17 +48,19 @@ fn jit(mut args: impl Iterator<Item = String>) -> Result<(), String> {
     let program = Program::new(header, commands);
     let content = program.compile_bytecode();
 
-    let mut parser = Parser::from_string(content);
-    let program = parser.program().map_err(|err| format!("{err}"))?;
+    let parser = Parser::new(&content);
+    let (_, program) = Program::visit(parser).map_err(|err| format!("{err}"))?;
     program.runtime().run();
 
     Ok(())
 }
 
-fn inspect(mut args: impl Iterator<Item = String>) {
-    let filepath = args.next().expect("Provide file path to the bytecode file");
-    let mut parser = Parser::from_filepath(filepath).expect("Can't read file");
-    let program = parser.program().expect("Cannot parse bytecode");
+fn inspect(mut args: impl Iterator<Item = String>) -> Result<(), String> {
+    let source = args.next().expect("Provide file path to the bytecode file");
+    let source = std::fs::read_to_string(&source)
+        .map_err(|err| format!("Can't read file {source}\nCause by: {err}"))?;
+    let parser = Parser::new(&source);
+    let (_, program) = Program::visit(parser).expect("Cannot parse bytecode");
     let commands = program.body;
 
     for (i, cmd) in commands.iter().enumerate() {
@@ -70,6 +72,8 @@ fn inspect(mut args: impl Iterator<Item = String>) {
             .collect::<String>();
         print!("{cmd}");
     }
+
+    Ok(())
 }
 
 fn aml3(mut args: impl Iterator<Item = String>) -> Result<(), String> {
@@ -102,7 +106,13 @@ fn main() {
     let mut args = std::env::args().skip(1);
 
     match args.next().as_deref() {
-        Some("run") => run(args),
+        Some("run") => {
+            let Err(err) = run(args) else {
+                return;
+            };
+
+            eprintln!("\x1b[31m{err}\x1b[0m");
+        }
         Some("compile") => {
             let Err(err) = compile(args) else {
                 return;
@@ -110,7 +120,13 @@ fn main() {
 
             eprintln!("\x1b[31m{err}\x1b[0m");
         }
-        Some("inspect") => inspect(args),
+        Some("inspect") => {
+            let Err(err) = inspect(args) else {
+                return;
+            };
+
+            eprintln!("\x1b[31m{err}\x1b[0m");
+        }
 
         Some("aml3") => {
             let Err(err) = aml3(args) else {

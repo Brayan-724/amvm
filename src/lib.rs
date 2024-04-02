@@ -1,9 +1,13 @@
 pub mod aml3;
+
+mod macros;
+// pub use macros::*;
+
 mod runtime;
 pub use runtime::Runtime;
 
-mod parser;
-pub use parser::Parser;
+pub mod parser;
+pub use parser::{Parser, ParserResult};
 
 mod tokens;
 pub use tokens::{

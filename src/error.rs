@@ -1,26 +1,5 @@
 use std::error::Error;
 
-pub mod error_msgs {
-    // Header
-    pub const ERROR_INVALID_HEADER_DECL: &'static str = "Invalid header declaration";
-    pub const ERROR_UNKNOWN_TYPE_CASTING_KIND: &'static str = "Unknown type casting kind";
-
-    // Variable
-    // pub const ERROR_VAR_SHOULD_BE_STRING: &'static str = "Variable names should be a string value";
-    // pub const ERROR_INVALID_VAR_DECL: &'static str = "Invalid variable declaration";
-    pub const ERROR_UNKNOWN_VAR_KIND: &'static str = "Unknown variable kind";
-
-    // Value
-    pub const ERROR_INVALID_VALUE_DECL: &'static str = "Invalid value declaration";
-    pub const ERROR_UNKNOWN_VALUE_KIND: &'static str = "Unknown value kind";
-
-    // Expression
-    // pub const ERROR_INVALID_EXPR_DECL: &'static str = "Invalid expression declaration";
-
-    // Command
-    pub const ERROR_INVALID_CMD_DECL: &'static str = "Invalid command declaration";
-}
-
 #[derive(Debug, Clone)]
 pub struct ParserError {
     description: Box<str>,

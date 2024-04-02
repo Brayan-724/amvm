@@ -1,43 +1,59 @@
-use crate::Command;
+use crate::{parser, Command, Parser, ParserResult};
 
-use super::{Aml3Command, Aml3Error, Aml3Parser};
+use super::Aml3Command;
 
 pub struct Aml3Scope;
 
 impl Aml3Scope {
-    pub fn visit(parser: &mut Aml3Parser, outer: bool) -> Result<Vec<Command>, Aml3Error> {
-        if outer && !parser.consume_static('{') {
-            return Err(parser.error_expected("\"{\"", None));
-        }
+    pub fn visit<'a>(parser: Parser<'a>, outer: bool) -> ParserResult<'a, Vec<Command>> {
+        let parser = if outer {
+            parser::char('{')(parser)?.0
+        } else {
+            parser
+        };
 
         let mut cmds = vec![];
 
+        let mut parser = parser;
         loop {
-            if parser.pointer >= parser.bytes.len() {
+            if parser.value.is_empty() {
                 if outer {
-                    return Err(parser.error_expected("\"}\"", None));
+                    return Err(
+                        parser.error(parser::VerboseErrorKind::Context("Expected '}'"), true)
+                    );
                 }
+
                 break;
             }
 
-            if outer && parser.consume_static('}') {
-                break;
+            if outer {
+                let value = parser::char::<_, ()>('}')(parser).ok();
+                if let Some((_parser, _)) = value {
+                    parser = _parser;
+                    break;
+                }
             }
 
-            if parser.bytes[parser.pointer] == ' ' as u8 {
-                parser.go_forward(1);
+            let value = parser::take_space::<_, ()>(parser).ok();
+
+            parser = if let Some((_parser, c)) = value {
+                parser = if c == '\n' {
+                    _parser.new_line()
+                } else {
+                    _parser
+                };
+
                 continue;
-            }
+            } else {
+                parser
+            };
 
-            if parser.bytes[parser.pointer] == '\n' as u8 {
-                parser.go_forward(1);
-                parser.new_line();
-                continue;
-            }
+            let (_parser, cmd) = Aml3Command::visit(parser)?;
+            parser = _parser;
 
-            cmds.push(Aml3Command::visit(parser)?);
+            cmds.push(cmd);
         }
 
-        Ok(cmds)
+        Ok((parser, cmds))
     }
 }
