@@ -13,6 +13,12 @@ pub use parser::Aml3Parser;
 mod scope;
 pub use scope::Aml3Scope;
 
+mod r#struct;
+pub use r#struct::Aml3Struct;
+
+mod r#type;
+pub use r#type::Aml3Type;
+
 mod value;
 pub use value::Aml3Value;
 
@@ -22,10 +28,8 @@ pub use variable::Aml3Variable;
 use crate::{Command, Parser};
 
 pub fn from_str(source: &str) -> Result<Vec<Command>, String> {
-    let parser = Parser::new(source);
-    let (_, c) = Aml3Scope::visit(parser, false)
-        .map_err(Parser::map_nom_err)
-        .map_err(|err| err.to_string())?;
+    let parser = Parser::new(source, &false);
+    let (_, c) = Aml3Scope::visit(parser, false).map_err(Parser::flat_errors)?;
 
     Ok(c)
 }

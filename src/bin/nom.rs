@@ -16,7 +16,7 @@ fn visit_let<'a>(parser: Parser<'a>) -> ParserResult<'a, ()> {
 }
 
 fn main() {
-    let parser = Parser::new("@let ");
+    let parser = Parser::new("@let ", &false);
 
     let (parser, _) = parser::char('@')(parser)
         .map_err(Parser::map_nom_err)

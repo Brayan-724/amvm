@@ -1,0 +1,101 @@
+; --- Commands
+
+;; -- TODO
+
+; --- Variables
+{
+
+  ; Overwritable -> `=$var ..`
+  ; Mutable -> Change internal value, examples below.
+
+  ; All variables are scoped
+
+  ; Declare no overwritable and no mutable variable (const-solid)
+  ; - Default
+  @declare $const_var 1
+
+  ; Declare no overwritable, but mutable variable (const-mut)
+  ; Cannot be reassigned with `=$mut_var ..`, but 
+  ; internal values can be changed like:
+  ; ```aml3
+  ; @builtin .string.push_char $mut_mut_var 'o'
+  ; @puts $const_mut_var
+  ; ----> "Hello"
+  ; ```
+  @declare mut $mut_var "Hell"
+
+  ; Declare overwritable, but no mutable variable (let-solid)
+  ; Can be reassigned with `=$let_var ..`, but 
+  ; internal values cannot be changed, example:
+  ; ```aml3
+  ; =$let_var + $let_var 1
+  ; @puts $let_var 
+  ; ----> 2
+  ; ```
+  @declare let $let_var 1
+
+  ; Declare overwritable and mutable variable (let-mut)
+  ; Can be reassigned with `=$let_var ..`, but 
+  ; internal values can be changed, example:
+  ; ```aml3
+  ; @builtin .add_assign.u8 $var 1
+  ; @puts $var 
+  ; ----> 2
+  ; ```
+  @declare var $var 1
+}
+
+; --- TODO Details
+{
+  ; Smart Owning/Shadowing model. Example:
+
+  ; Declare a constant variable `a`
+  @declare $a "Hi"
+
+  ; Re-declare a constant variable and 
+  ; use de same name (Shadowing).
+  ; Is constant, so no need to do nothing,
+  ; this will be analyzed staticly
+  @declare $a + $a "World!"
+
+  @puts $a
+  ; Compiled version:
+  @puts "Hello World!"
+
+  ; For loops
+  @for $char : $a {
+    @puts $char + "\n"
+  }
+
+  ; Compiled version:
+  @builtin .io.stdout.puts.slice "H\nE\nL\nL .."
+  ; constant "ABC" is equal to ['A', 'B', 'C']
+}
+
+; --- Meta
+{
+  ; Compile from other languages needs some debuging and 
+  ; you can enable it with the following rules:
+  ; > This is an example from javascript
+
+  ; LINE:COLUMN CODE
+  ! 1:0 const a = 1;
+  @declare let $a 1
+
+  ; You can add meta in expressions too, use @tmp
+  ! 2:11 a
+  @tmp $a
+  ! 2:0 console.log(a);
+  @puts _
+
+  ! 3:4 2
+  @tmp 2;
+  ! 3:0 a = 2;
+  =$a _
+  ;; ERROR: Cannot reassign a `let` variable.
+  ;; 3 | a = 2;
+  ;;   | ^
+  ;; Using meta code, use --ir-debug to see aml3 code.
+  ;; 86 | =$a _
+  ;;    | ^
+}

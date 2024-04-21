@@ -48,6 +48,50 @@ impl Aml3Value {
         }
     }
 
+    fn visit_char<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
+        let (parser, _) = parser::anychar(parser)
+            .map_err(Parser::map_nom_err)
+            .expect("Already verified");
+
+        let (parser, c) =
+            parser::anychar(parser).map_err(parser.nom_err_with_context("Unterminated char"))?;
+
+        let (parser, c) = match c {
+            '\n' | '\r' | '\t' => {
+                return Err(
+                    parser.error(parser::VerboseErrorKind::Context("Unterminated char"), true)
+                )
+            }
+            // Escaping
+            '\\' => {
+                let (parser, c2) = parser::anychar(parser)
+                    .map_err(parser.nom_err_with_context("Unterminated char"))?;
+
+                match c2 {
+                    '\n' | '\r' | '\t' => {
+                        return Err(parser
+                            .error(parser::VerboseErrorKind::Context("Unterminated char"), true))
+                    }
+
+                    '\\' => (parser, c2),
+                    'n' => (parser, '\n'),
+                    '\'' => (parser, '\''),
+
+                    _ => {
+                        return Err(parser.error(
+                            parser::VerboseErrorKind::Context("Invalid escaped character"),
+                            true,
+                        ))
+                    }
+                }
+            }
+
+            _ => (parser, c),
+        };
+
+        Ok((parser, Value::Char(c)))
+    }
+
     fn visit_string<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
         let (parser, _) = parser::anychar(parser)
             .map_err(Parser::map_nom_err)
@@ -61,6 +105,7 @@ impl Aml3Value {
                 .map_err(parser.nom_err_with_context("Unterminated string"))?;
             parser = _parser;
 
+            let mut next_escaping = false;
             match c {
                 '\n' => {
                     return Err(parser.error(
@@ -68,26 +113,23 @@ impl Aml3Value {
                         true,
                     ))
                 }
-                '\\' if escaping => str.push('\\'),
                 '"' if escaping => str.push('"'),
-                'n' if escaping => str.push('\n'),
                 '"' => break,
-                '\\' => {}
+                '\\' if escaping => str.push('\\'),
+                '\\' => next_escaping = true,
 
+                'n' if escaping => str.push('\n'),
+                _ if escaping => {
+                    return Err(parser.error(
+                        parser::VerboseErrorKind::Context("Invalid escaped character"),
+                        true,
+                    ))
+                }
                 _ => str.push(c),
             }
 
-            if c == '\\' && !escaping {
-                escaping = true;
-            } else {
-                escaping = false;
-            }
+            escaping = next_escaping;
         }
-
-        // XXX: Why? I don't remember
-        // Consume following character expect for new line, supposed to be space
-        // let (_, _) = parser::take_space(parser)
-        //     .map_err(parser.nom_err_with_context("Should be space or newline after a string"))?;
 
         Ok((parser, Value::String(str)))
     }
@@ -115,6 +157,7 @@ impl Aml3Value {
         match first {
             b if b.is_digit(10) => Self::visit_number(parser),
             '"' => Self::visit_string(parser),
+            '\'' => Self::visit_char(parser),
 
             't' | 'f' => Self::visit_bool(parser),
 

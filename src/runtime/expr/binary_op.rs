@@ -13,8 +13,10 @@ pub fn eval(
     a: &CommandExpression,
     b: &CommandExpression,
 ) -> AmvmResult {
-    let a = super::eval(scope, a)?;
-    let b = super::eval(scope, b)?;
+    let binding = super::eval(scope, a)?.as_value();
+    let a = binding.as_ref();
+    let binding = super::eval(scope, b)?.as_value();
+    let b = binding.as_ref();
 
     macro_rules! impl_ops {
         ($a:ident, $b:ident) => {

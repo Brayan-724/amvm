@@ -48,6 +48,9 @@ impl Aml3Scope {
                 parser
             };
 
+            let at = parser.pointer_position();
+            tracing::trace!("------- at {at:02x} -------");
+
             let (_parser, cmd) = Aml3Command::visit(parser)?;
             parser = _parser;
 

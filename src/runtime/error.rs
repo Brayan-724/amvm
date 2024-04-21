@@ -1,2 +1,4 @@
 #[derive(Debug, Clone)]
-pub enum AmvmError {}
+pub enum AmvmError {
+    Other(&'static str),
+}

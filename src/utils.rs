@@ -41,3 +41,33 @@ impl Compilable for [crate::Command] {
             .into()
     }
 }
+
+impl Compilable for String {
+    fn compile_bytecode(&self) -> Box<str> {
+        Box::from(crate::Value::compile_string(self))
+    }
+}
+
+impl Compilable for &String {
+    fn compile_bytecode(&self) -> Box<str> {
+        Box::from(crate::Value::compile_string(self))
+    }
+}
+
+impl Compilable for &str {
+    fn compile_bytecode(&self) -> Box<str> {
+        Box::from(crate::Value::compile_string(self))
+    }
+}
+
+impl Compilable for Box<str> {
+    fn compile_bytecode(&self) -> Box<str> {
+        Box::from(crate::Value::compile_string(self))
+    }
+}
+
+impl Compilable for &Box<str> {
+    fn compile_bytecode(&self) -> Box<str> {
+        Box::from(crate::Value::compile_string(self))
+    }
+}

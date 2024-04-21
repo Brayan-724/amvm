@@ -8,6 +8,7 @@ pub fn eval(scope: &mut AmvmScope, body: &Vec<Command>) -> AmvmResult {
         for cmd in scope.body.clone().iter() {
             match super::eval(&mut scope, cmd) {
                 Err(crate::runtime::AmvmPropagate::Break) => break 'l,
+                Err(e) => return Err(e),
                 _ => {}
             };
         }

@@ -8,7 +8,7 @@ fn compile(mut args: impl Iterator<Item = String>) -> Result<(), String> {
     let commands: Vec<Command> =
         aml3::from_str(&content).map_err(|err| format!("Can't parse file {source}\n{err}"))?;
 
-    println!("{commands:#?}");
+    // println!("{commands:#?}");
 
     let header = AmvmHeader {
         sum_kind: AmvmTypeCasting::TypeCastingStrictlessString,
@@ -24,9 +24,8 @@ fn run(mut args: impl Iterator<Item = String>) -> Result<(), String> {
     let source = args.next().expect("Provide file path to the bytecode file");
     let source = std::fs::read_to_string(&source)
         .map_err(|err| format!("Can't read file {source}\nCause by: {err}"))?;
-    let parser = Parser::new(&source);
-    let (_, program) =
-        Program::visit(parser).map_err(|err| format!("{:#?}", Parser::map_nom_err(err)))?;
+    let parser = Parser::new(&source, &true);
+    let (_, program) = Program::visit(parser).map_err(Parser::flat_errors)?;
 
     program.runtime().run().unwrap();
 
@@ -48,9 +47,11 @@ fn jit(mut args: impl Iterator<Item = String>) -> Result<(), String> {
     let program = Program::new(header, commands);
     let content = program.compile_bytecode();
 
-    let parser = Parser::new(&content);
-    let (_, program) = Program::visit(parser).map_err(|err| format!("{err}"))?;
-    program.runtime().run();
+    let parser = Parser::new(&content, &true);
+    let (_, program) = Program::visit(parser)
+        .map_err(Parser::flat_errors)
+        .map_err(|err| format!("{err}"))?;
+    program.runtime().run().unwrap();
 
     Ok(())
 }
@@ -59,8 +60,8 @@ fn inspect(mut args: impl Iterator<Item = String>) -> Result<(), String> {
     let source = args.next().expect("Provide file path to the bytecode file");
     let source = std::fs::read_to_string(&source)
         .map_err(|err| format!("Can't read file {source}\nCause by: {err}"))?;
-    let parser = Parser::new(&source);
-    let (_, program) = Program::visit(parser).expect("Cannot parse bytecode");
+    let parser = Parser::new(&source, &true);
+    let (_, program) = Program::visit(parser).map_err(Parser::flat_errors)?;
     let commands = program.body;
 
     for (i, cmd) in commands.iter().enumerate() {
@@ -104,6 +105,13 @@ fn help() {
 
 fn main() {
     let mut args = std::env::args().skip(1);
+
+    let subscriber = tracing_subscriber::FmtSubscriber::builder()
+        // .with_max_level(tracing::Level::TRACE)
+        .with_timer(tracing_subscriber::fmt::time::Uptime::default())
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     match args.next().as_deref() {
         Some("run") => {

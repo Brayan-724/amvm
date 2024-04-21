@@ -7,15 +7,17 @@ pub fn eval(
     body: &Vec<Command>,
     otherwise: &Option<Vec<Command>>,
 ) -> AmvmResult {
-    let condition = expr::eval(scope, condition)?;
-    let Value::Bool(condition) = condition else {
-        return Ok(Value::Null);
+    let condition = expr::eval(scope, condition)?.as_value();
+    let Value::Bool(condition) = condition.as_ref() else {
+        return Err(crate::runtime::AmvmPropagate::Err(
+            crate::runtime::AmvmError::Other("Condition should be boolean"),
+        ));
     };
 
-    if condition {
-        scope::eval(scope, body)
+    if *condition {
+        scope::eval(scope, body, false)
     } else if let Some(otherwise) = otherwise {
-        scope::eval(scope, otherwise)
+        scope::eval(scope, otherwise, false)
     } else {
         Ok(Value::Null)
     }

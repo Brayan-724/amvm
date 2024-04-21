@@ -1,12 +1,16 @@
 use crate::parser::ParserResult;
 use crate::{parser, Compilable, Parser, Value};
 
+use super::AmvmType;
+
 pub static EXPR_VALUE: char = '\x11';
 pub static EXPR_VAR: char = '\x12';
 pub static EXPR_PROP: char = '\x13';
 pub static EXPR_ADD: char = '\x14';
 pub static EXPR_SUB: char = '\x15';
 pub static EXPR_COND: char = '\x16';
+pub static EXPR_PREV: char = '\x18';
+pub static EXPR_STRUCT: char = '\x19';
 
 pub static EXPR_COND_LESS_THAN: char = '\x01';
 pub static EXPR_COND_LESS_THAN_EQUAL: char = '\x02';
@@ -40,8 +44,10 @@ impl Compilable for BinaryConditionKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandExpression {
+    Prev,
+
     Value(Value),
-    Var(Value),
+    Var(String),
 
     Property(Box<CommandExpression>, Box<CommandExpression>),
 
@@ -53,14 +59,18 @@ pub enum CommandExpression {
         Box<CommandExpression>,
         Box<CommandExpression>,
     ),
+
+    Struct(AmvmType, Vec<(Box<str>, CommandExpression)>),
 }
 
 impl std::fmt::Display for CommandExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Prev => f.write_str("Prev"),
             Self::Value(v) => (v as &dyn std::fmt::Display).fmt(f),
             Self::Var(v) => f.write_fmt(format_args!("${v}")),
             Self::Property(a, b) => f.write_fmt(format_args!("({a})[{b}]")),
+            Self::Struct(t, data) => f.write_fmt(format_args!("{t} {data:?}")),
 
             Self::Addition(a, b) => f.write_fmt(format_args!("{a} + {b}")),
             Self::Substraction(a, b) => f.write_fmt(format_args!("{a} - {b}")),
@@ -109,13 +119,15 @@ impl CommandExpression {
         }
     }
 
-    pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
-        let (parser, b) = parser::anychar(parser)
-            .map_err(parser.nom_err_with_context("Expected expression kind"))?;
+    pub fn visit<'a>(parser_: Parser<'a>) -> ParserResult<'a, Self> {
+        let (parser, b) = parser::anychar(parser_)
+            .map_err(parser_.nom_err_with_context("Expected expression kind"))?;
 
         match b {
+            b if b == EXPR_PREV => Ok((parser, CommandExpression::Prev)),
             b if b == EXPR_VAR => {
-                let (parser, value) = Value::visit(parser)?;
+                let (parser, value) = Value::visit_string(parser)?;
+                let value = value.to_owned();
                 Ok((parser, CommandExpression::Var(value)))
             }
             b if b == EXPR_ADD => {
@@ -142,7 +154,25 @@ impl CommandExpression {
                 Ok((parser, CommandExpression::Value(value)))
             }
             b if b == EXPR_COND => Self::visit_cond(parser),
-            _ => Err(parser.error(
+            b if b == EXPR_STRUCT => {
+                let (parser, r#type) = AmvmType::visit(parser)?;
+                let (parser, fields_len) = parser::anychar(parser)
+                    .map_err(parser.nom_err_with_context("Expected fields length"))?;
+
+                let fields_len = fields_len as u8;
+                let mut data = Vec::with_capacity(fields_len as usize);
+
+                let mut parser = parser;
+                for _ in 0..fields_len {
+                    let (parser_, field) = Value::visit_string(parser)?;
+                    let (parser_, r#type) = CommandExpression::visit(parser_)?;
+                    parser = parser_;
+                    data.push((Box::from(field), r#type))
+                }
+
+                Ok((parser, CommandExpression::Struct(r#type, data)))
+            }
+            _ => Err(parser_.error(
                 parser::VerboseErrorKind::Context("Unknown expression kind"),
                 true,
             )),
@@ -153,30 +183,51 @@ impl CommandExpression {
 impl Compilable for CommandExpression {
     fn compile_bytecode(&self) -> Box<str> {
         Box::from(match self {
-            Self::Value(v) => Box::from(format!("{EXPR_VALUE}{}", v.compile_bytecode())),
-            Self::Var(var) => Box::from(format!("{EXPR_VAR}{}", var.compile_bytecode())),
+            Self::Prev => EXPR_PREV.to_string(),
+            Self::Value(v) => format!("{EXPR_VALUE}{}", v.compile_bytecode()),
+            Self::Var(var) => format!("{EXPR_VAR}{}", Value::compile_string(var)),
+            Self::Struct(r#type, data) => format!(
+                "{EXPR_STRUCT}{}{}",
+                r#type.compile_bytecode(),
+                data.compile_bytecode()
+            ),
             Self::BinaryCondition(kind, a, b) => {
                 let kind = kind.compile_bytecode();
                 let a = a.compile_bytecode();
                 let b = b.compile_bytecode();
 
-                Box::from(format!("{EXPR_COND}{kind}{a}{b}"))
+                format!("{EXPR_COND}{kind}{a}{b}")
             }
-            Self::Property(a, b) => Box::from(format!(
+            Self::Property(a, b) => format!(
                 "{EXPR_PROP}{}{}",
                 a.compile_bytecode(),
                 b.compile_bytecode()
-            )),
-            Self::Addition(a, b) => Box::from(format!(
-                "{EXPR_ADD}{}{}",
-                a.compile_bytecode(),
-                b.compile_bytecode()
-            )),
-            Self::Substraction(a, b) => Box::from(format!(
-                "{EXPR_SUB}{}{}",
-                a.compile_bytecode(),
-                b.compile_bytecode()
-            )),
+            ),
+            Self::Addition(a, b) => {
+                format!("{EXPR_ADD}{}{}", a.compile_bytecode(), b.compile_bytecode())
+            }
+            Self::Substraction(a, b) => {
+                format!("{EXPR_SUB}{}{}", a.compile_bytecode(), b.compile_bytecode())
+            }
         })
+    }
+}
+
+impl Compilable for Vec<(Box<str>, CommandExpression)> {
+    fn compile_bytecode(&self) -> Box<str> {
+        let len = self.len() as u8 as char;
+
+        let fields: String = self
+            .iter()
+            .map(|f| {
+                format!(
+                    "{name}{value}",
+                    name = f.0.compile_bytecode(),
+                    value = f.1.compile_bytecode()
+                )
+            })
+            .collect();
+
+        Box::from(format!("{len}{fields}"))
     }
 }

@@ -7,8 +7,10 @@ pub fn eval(
     a: &CommandExpression,
     b: &CommandExpression,
 ) -> AmvmResult {
-    let a = expr::eval(scope, a)?;
-    let b = expr::eval(scope, b)?;
+    let binding = expr::eval(scope, a)?.as_value();
+    let a = binding.as_ref();
+    let binding = expr::eval(scope, b)?.as_value();
+    let b = binding.as_ref();
 
     match kind {
         BinaryConditionKind::GreaterThanEqual => match (a, b) {
@@ -19,6 +21,10 @@ pub fn eval(
             (Value::String(a), Value::String(b)) => Ok(Value::Bool(a != b)),
             (Value::String(_), _) => Ok(Value::Bool(false)),
             (Value::Null, Value::Null) => Ok(Value::Bool(true)),
+            (a, b) => todo!("{a:?} {b:?}"),
+        },
+        BinaryConditionKind::Equal => match (a, b) {
+            (Value::String(a), Value::String(b)) => Ok(Value::Bool(a == b)),
             (a, b) => todo!("{a:?} {b:?}"),
         },
         _ => todo!(),

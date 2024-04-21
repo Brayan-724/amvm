@@ -21,7 +21,7 @@ macro_rules! test_numeric {
 fn main() {
     assert_eq!(
         amvm_expr!($var),
-        CommandExpression::Var(Value::String(String::from("var")))
+        CommandExpression::Var(String::from("var"))
     );
 
     test_numeric!(u8; U8);
@@ -37,7 +37,7 @@ fn main() {
     assert_eq!(
         amvm_expr!(+($var) (2 u8)),
         CommandExpression::Addition(
-            Box::new(CommandExpression::Var(Value::String(String::from("var")))),
+            Box::new(CommandExpression::Var(String::from("var"))),
             Box::new(CommandExpression::Value(Value::U8(2)))
         )
     );

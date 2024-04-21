@@ -1,3 +1,4 @@
+use crate::aml3::{Aml3Struct, Aml3Type};
 use crate::{parser, Command, Parser, ParserResult, VariableKind};
 
 use super::{Aml3Expr, Aml3Scope, Aml3Variable};
@@ -46,45 +47,68 @@ impl Aml3Command {
         ))
     }
 
-    pub fn visit_command<'a>(parser: Parser<'a>) -> ParserResult<'a, Command> {
+    fn visit_command<'a>(parser: Parser<'a>) -> ParserResult<'a, Command> {
         let (parser, cmd) = parser::take_until_space(parser)
             .map_err(parser.nom_err_with_context("Expected command"))?;
 
-        println!("VISIT Command: {}", cmd.value);
+        tracing::trace!(?cmd.value);
 
         match cmd.value {
-            "let" => {
+            "break" => Ok((parser, Command::Break)),
+            "builtin" => {
                 let (parser, _) = parser::char(' ')(parser)?;
+                let (mut parser, name) = parser::take_until_space(parser)?;
+                let name = name.value.to_owned();
+
+                let mut args = vec![];
+
+                while !parser.is_eol() {
+                    let (_parser, _) = parser::char(' ')(parser)?;
+                    let (_parser, expr) = Aml3Expr::visit(_parser)?;
+                    parser = _parser;
+
+                    args.push(expr);
+                }
+
+                Ok((parser, Command::Builtin { name, args }))
+            }
+
+            "declare" => {
+                let (parser, _) = parser::char(' ')(parser)?;
+                let (parser, kind) = if let Some('$') = parser.peek(0) {
+                    (parser, VariableKind::Const)
+                } else {
+                    let (parser, kind) = parser::needs_space(parser::take_until_space)(parser)?;
+                    let kind = kind.value;
+
+                    (
+                        parser,
+                        VariableKind::from_str(kind).ok_or_else(|| {
+                            parser.error(
+                                parser::VerboseErrorKind::Context("Unknown variable kind"),
+                                true,
+                            )
+                        })?,
+                    )
+                };
+                tracing::trace!(?kind);
                 let (parser, name) = Aml3Variable::visit(parser)?;
-                println!("VISIT Command Let: {}", name);
+                tracing::trace!(?name);
                 let (parser, _) = parser::char(' ')(parser)?;
                 let (parser, value) = Aml3Expr::visit(parser)?;
-                println!("VISIT Command Let: {}", value);
+                tracing::trace!(?value);
 
                 Ok((
                     parser,
                     Command::DeclareVariable {
-                        kind: VariableKind::Let,
-                        name,
+                        kind,
+                        name: name.to_owned(),
                         value,
                     },
                 ))
             }
-            "const" => {
-                let (parser, _) = parser::char(' ')(parser)?;
-                let (parser, name) = Aml3Variable::visit(parser)?;
-                let (parser, _) = parser::char(' ')(parser)?;
-                let (parser, value) = Aml3Expr::visit(parser)?;
 
-                Ok((
-                    parser,
-                    Command::DeclareVariable {
-                        kind: VariableKind::Const,
-                        name,
-                        value,
-                    },
-                ))
-            }
+            "if" => Self::visit_conditional(parser),
 
             "loop" => {
                 let (parser, _) = parser::char(' ')(parser)?;
@@ -93,9 +117,6 @@ impl Aml3Command {
                 Ok((parser, Command::Loop { body }))
             }
 
-            "break" => Ok((parser, Command::Break)),
-            "if" => Self::visit_conditional(parser),
-
             "puts" => {
                 let (parser, _) = parser::char(' ')(parser)?;
                 let (parser, value) = Aml3Expr::visit(parser)?;
@@ -103,27 +124,44 @@ impl Aml3Command {
                 Ok((parser, Command::Puts { value }))
             }
 
-            _ => todo!("{}", cmd.value),
+            "struct" => {
+                let (parser, _) = parser::char(' ')(parser)?;
+                let (parser, name) = Aml3Type::visit_name(parser)?;
+                let (parser, _) = parser::char(' ')(parser)?;
+                let (parser, def) = Aml3Struct::visit_decl_block(parser)?;
+
+                let name = Box::from(name.unwrap_or_default());
+                let body = def.into_iter().map(|v| (Box::from(v.0), v.1)).collect();
+
+                Ok((parser, Command::Struct { name, body }))
+            }
+
+            _ => Err(parser.error(parser::VerboseErrorKind::Context("Unknown command"), true)),
         }
     }
 
-    pub fn visit_asgn<'a>(parser: Parser<'a>) -> ParserResult<'a, Command> {
+    fn visit_asgn<'a>(parser: Parser<'a>) -> ParserResult<'a, Command> {
         let (parser, var) = Aml3Variable::visit(parser)?;
 
         let (parser, _) = parser::char(' ')(parser)?;
 
         let (parser, value) = Aml3Expr::visit(parser)?;
 
-        Ok((parser, Command::AssignVariable { name: var, value }))
+        Ok((
+            parser,
+            Command::AssignVariable {
+                name: var.to_owned(),
+                value,
+            },
+        ))
     }
 
-    // pub fn visit_expr<'a>(parser: Parser<'a>) -> ParserResult<'a, Command> {}
-
+    #[tracing::instrument("visit_command", fields(parser = &parser.value.get(..10).unwrap_or(&parser.value)), level = tracing::Level::TRACE)]
     pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, Command> {
         let (consumed_parser, command) =
             parser::anychar(parser).map_err(parser.nom_err_with_context("Expected command"))?;
 
-        println!("VISIT: {command}");
+        tracing::trace!(?command);
 
         match command {
             '@' => Self::visit_command(consumed_parser),

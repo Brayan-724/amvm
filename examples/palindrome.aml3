@@ -1,20 +1,20 @@
-@let $word "ana"
-@let $left 0u8
-@let $right -.$word "length" 1u8
-@let $is_palindrome true
+@declare $word "ana"
+@declare mut $left 0u8
+@declare mut $right - . $word "length" 1u8
+@declare mut $is_palindrome true
 
 @loop {
-  @if >=$left $right {
+  @if >= $left $right {
     @break
   }
 
-  @if !=.$word $left .$word $right {
+  @if != . $word $left . $word $right {
     =$is_palindrome false
     @break
   }
 
-  =$left +$left 1u8
-  =$right -$right 1u8
+  =$left + $left 1u8
+  =$right - $right 1u8
 }
 
 @if $is_palindrome {

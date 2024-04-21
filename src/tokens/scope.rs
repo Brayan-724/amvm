@@ -1,6 +1,6 @@
 use std::fmt;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::runtime::Context;
 use crate::{AmvmHeader, Command, Compilable, COMMAND_SEPARATOR};
@@ -9,15 +9,21 @@ use crate::{AmvmHeader, Command, Compilable, COMMAND_SEPARATOR};
 pub struct AmvmScope {
     pub header: Arc<AmvmHeader>,
     pub body: Rc<Vec<Command>>,
-    pub context: Context,
+    pub context: Arc<RwLock<Context>>,
 }
 
 impl AmvmScope {
-    pub fn new(header: &Arc<AmvmHeader>, body: Vec<Command>, upper: Option<&Context>) -> Self {
+    pub fn new(
+        header: &Arc<AmvmHeader>,
+        body: Vec<Command>,
+        upper: Option<Arc<RwLock<Context>>>,
+    ) -> Self {
         Self {
             header: Arc::clone(header),
             body: Rc::new(body),
-            context: upper.map_or_else(|| Context::new(), |v| v.create_sub()),
+            context: Arc::new(RwLock::new(
+                upper.map_or_else(|| Context::new(), |v| Context::create_sub(v)),
+            )),
         }
     }
 
@@ -25,7 +31,7 @@ impl AmvmScope {
         Self {
             header: Arc::clone(&self.header),
             body: Rc::new(body),
-            context: self.context.create_sub(),
+            context: Arc::new(RwLock::new(Context::create_sub(self.context.clone()))),
         }
     }
 }

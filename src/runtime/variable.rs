@@ -1,6 +1,8 @@
-use std::sync::{Arc, LockResult, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 use crate::{Value, VariableKind};
+
+use super::{AmvmError, AmvmPropagate, AmvmResult};
 
 #[derive(Clone, Debug)]
 pub struct Variable {
@@ -9,22 +11,56 @@ pub struct Variable {
 }
 
 #[derive(Clone, Debug)]
-pub struct AmvmVariable {
-    inner: Arc<RwLock<Variable>>,
+pub enum AmvmVariable {
+    Const(Arc<Value>),
+    Mut(Arc<RwLock<Value>>),
+    Let(Arc<RwLock<Value>>),
+    Var(Arc<RwLock<Value>>),
 }
 
 impl AmvmVariable {
     pub fn new(kind: VariableKind, value: Value) -> Self {
-        Self {
-            inner: Arc::new(RwLock::new(Variable { kind, value })),
+        match kind {
+            VariableKind::Const => Self::Const(Arc::new(value)),
+            VariableKind::Mut => Self::Mut(Arc::new(RwLock::new(value))),
+            VariableKind::Let => Self::Let(Arc::new(RwLock::new(value))),
+            VariableKind::Var => Self::Var(Arc::new(RwLock::new(value))),
         }
     }
 
-    pub fn read(&self) -> LockResult<RwLockReadGuard<'_, Variable>> {
-        self.inner.read()
+    pub fn read(&self) -> Arc<Value> {
+        match self {
+            Self::Const(v) => v.clone(),
+            // FIXME: No clones
+            Self::Mut(v) | Self::Let(v) | Self::Var(v) => Arc::new(v.read().unwrap().to_owned()),
+        }
     }
 
-    pub fn write(&self) -> LockResult<RwLockWriteGuard<'_, Variable>> {
-        self.inner.write()
+    pub fn write(&self) -> Option<RwLockWriteGuard<'_, Value>> {
+        match self {
+            Self::Const(_) => None,
+            Self::Mut(v) | Self::Let(v) | Self::Var(v) => Some(v.write().unwrap()),
+        }
+    }
+
+    pub fn assign(&self, v: Value) -> AmvmResult {
+        let variable = match self {
+            Self::Const(_) => {
+                return AmvmResult::Err(AmvmPropagate::Err(AmvmError::Other(
+                    "Can't assign a value to a constant variable",
+                )))
+            }
+            Self::Mut(_) => {
+                return AmvmResult::Err(AmvmPropagate::Err(AmvmError::Other(
+                    "Can't assign a value to a mutable variable",
+                )))
+            }
+            Self::Let(v) => v,
+            Self::Var(v) => v,
+        };
+
+        *variable.write().unwrap() = v;
+
+        Ok(Value::Null)
     }
 }

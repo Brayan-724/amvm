@@ -1,39 +1,14 @@
 use crate::runtime::{expr, AmvmResult};
-use crate::{AmvmScope, CommandExpression, Value, VariableKind};
+use crate::{AmvmScope, CommandExpression, Value};
 
-pub fn eval(scope: &mut AmvmScope, name: &Value, value: &CommandExpression) -> AmvmResult {
-    let name = name
-        .as_string()
-        .expect("Variable name should be string")
-        .clone();
+pub fn eval(scope: &mut AmvmScope, name: &String, value: &CommandExpression) -> AmvmResult {
+    let name = name.clone();
 
-    {
-        let variable = scope
-            .context
-            .variables
-            .get(&name)
-            .unwrap_or_else(|| panic!("{name:?} is not defined"));
+    let value = expr::eval(scope, value)?.as_value();
 
-        let is_mutable = variable.read().unwrap().kind == VariableKind::Let;
-
-        if !is_mutable {
-            eprintln!("ERROR: Trying to mutate inmutable variable");
-            std::process::exit(1);
-        }
-    }
-
-    {
-        let value = expr::eval(scope, value)?;
-
-        let variable = scope
-            .context
-            .variables
-            .get(&name)
-            .unwrap_or_else(|| panic!("{name:?} is not defined"));
-
-        let mut variable = variable.write().unwrap();
-        variable.value = value;
-    }
+    let context = scope.context.read().unwrap();
+    let variable = context.get_variable(&name);
+    _ = variable.assign(value.as_ref().clone())?;
 
     Ok(Value::Null)
 }

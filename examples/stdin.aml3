@@ -1,0 +1,26 @@
+@declare mut $input ""
+
+@puts "Welcome to my machine.\n"
+@puts "See commands with .help\n"
+@builtin .io.stdout.flush
+
+@builtin .vm.create
+@declare mut $ctx _
+
+@puts + "Initial: " + $ctx '\n
+
+@builtin .io.stdout.flush
+
+@loop {
+  @puts "> "
+  @builtin .io.stdout.flush
+  @builtin .io.stdin.read_line $input
+
+  @if == $input ".help" {
+    @puts "Show help\n"
+  } @else {
+    @builtin .vm.eval $ctx $input
+    @puts _
+    @puts '\n
+  }
+}

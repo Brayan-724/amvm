@@ -29,13 +29,14 @@ impl Program {
             let at = parser.pointer_position();
             let (_parser, cmd) = Command::visit(parser)?;
             parser = _parser;
+            parser = parser.new_line();
 
             if CMD_VERBOSE {
                 let ib = format!("\x1b[32m{at:03x}\x1b[0m");
                 let cmd = format!("{cmd}");
                 let mut cmd = cmd
                     .split('\n')
-                    .map(|c| format!(".{ib}{c}\n"))
+                    .map(|c| format!("{ib}{c}\n"))
                     .collect::<String>();
 
                 cmd.pop();

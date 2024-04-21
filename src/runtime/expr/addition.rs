@@ -3,8 +3,10 @@ use crate::{AmvmScope, AmvmTypeCasting, CommandExpression, Value};
 use crate::runtime::{expr, AmvmResult};
 
 pub fn eval(scope: &mut AmvmScope, a: &CommandExpression, b: &CommandExpression) -> AmvmResult {
-    let a = expr::eval(scope, a)?;
-    let b = expr::eval(scope, b)?;
+    let binding = expr::eval(scope, a)?.as_value();
+    let a = binding.as_ref();
+    let binding = expr::eval(scope, b)?.as_value();
+    let b = binding.as_ref();
 
     match scope.header.sum_kind {
         AmvmTypeCasting::Strict => eval_strict(scope, a, b),
@@ -14,7 +16,7 @@ pub fn eval(scope: &mut AmvmScope, a: &CommandExpression, b: &CommandExpression)
     }
 }
 
-fn eval_strict(_: &mut AmvmScope, a: Value, b: Value) -> AmvmResult {
+fn eval_strict(_: &mut AmvmScope, a: &Value, b: &Value) -> AmvmResult {
     match (a, b) {
         (Value::Null, Value::Null) => Ok(Value::Null),
         (Value::U8(a), Value::U8(b)) => Ok(Value::U8(a + b)),
@@ -26,7 +28,7 @@ fn eval_strict(_: &mut AmvmScope, a: Value, b: Value) -> AmvmResult {
     }
 }
 
-fn eval_cast_strictless_string(_: &mut AmvmScope, a: Value, b: Value) -> AmvmResult {
+fn eval_cast_strictless_string(_: &mut AmvmScope, a: &Value, b: &Value) -> AmvmResult {
     match (a, b) {
         (Value::Null, Value::Null) => Ok(Value::Null),
         (Value::U8(a), Value::U8(b)) => Ok(Value::U8(a + b)),

@@ -1,0 +1,18 @@
+@struct #Animal {
+  breed #string
+}
+
+@struct #Person {
+  name #string
+}
+
+@declare $obj #+ #Person #Animal { name "NAME" breed "Human" }
+
+@puts $obj
+@puts '\n
+
+@puts "Name:"
+@puts . $obj "name"
+@puts "\nProp1:"
+@puts . $obj "prop1"
+@puts '\n

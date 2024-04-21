@@ -25,7 +25,7 @@ macro_rules! amvm_expr {
         if ::std::stringify!($t) != "$" {
             ::std::panic!(::std::concat!("Unexpected token \"", ::std::stringify!($t), "\""))
         } else {
-            $crate::CommandExpression::Var($crate::Value::String(String::from(::std::stringify!($name))))
+            $crate::CommandExpression::Var(String::from(::std::stringify!($name)))
         }
     };
 }
