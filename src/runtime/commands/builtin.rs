@@ -1,9 +1,11 @@
 use std::io::Write;
 
-use crate::runtime::{expr, AmvmResult};
-use crate::{AmvmScope, CommandExpression, Value, ValueObject};
+use crate::{
+    runtime::{expr, AmvmError, AmvmPropagate, AmvmResult},
+    tokens::{AmvmScope, CommandExpression, Value, ValueObject},
+};
 
-pub fn eval(scope: &mut AmvmScope, name: &String, args: &Vec<CommandExpression>) -> AmvmResult {
+pub fn eval(scope: &mut AmvmScope, name: &Box<str>, args: &Vec<CommandExpression>) -> AmvmResult {
     let mut args_evaluated = vec![];
 
     for a in args.iter().map(|v| expr::eval(scope, v)) {
@@ -26,23 +28,17 @@ pub fn eval(scope: &mut AmvmScope, name: &String, args: &Vec<CommandExpression>)
             let ctx = args_evaluated
                 .get(0)
                 .expect("Should use `.vm.eval $ctx ...`");
-            let ctx = ctx.as_ref().expect("Out buffer should be a variable");
+            let ctx = ctx.as_var().expect("Out buffer should be a variable");
             let ctx = ctx.read();
             let ctx = ctx.as_object().expect("Should be object");
-            let ctx = ctx
-                .to_native_mutable::<AmvmScope>()
-                .expect("Should be object");
+            let Some(ctx) = ctx.to_native_mutable::<AmvmScope>() else {
+                return Err(AmvmPropagate::Err(AmvmError::Other("Should be object")));
+            };
 
             let code = args_evaluated
                 .get(1)
                 .expect("Should use `.vm.eval $ctx CODE`");
             let code = code.as_value();
-
-            // let Value::U8(ctx) = ctx.deref_mut() else {
-            //     return Err(crate::runtime::AmvmPropagate::Err(
-            //         crate::runtime::AmvmError::Other("Context should be mutable u8"),
-            //     ));
-            // };
 
             let Value::String(code) = code.as_ref() else {
                 return Err(crate::runtime::AmvmPropagate::Err(
@@ -68,7 +64,7 @@ pub fn eval(scope: &mut AmvmScope, name: &String, args: &Vec<CommandExpression>)
             let out = args_evaluated
                 .get(0)
                 .expect("Should use `.io.stdin.read_line $out_buffer`");
-            let out = out.as_ref().expect("Out buffer should be a variable");
+            let out = out.as_var().expect("Out buffer should be a variable");
 
             let mut out_buff = String::new();
             std::io::stdin()

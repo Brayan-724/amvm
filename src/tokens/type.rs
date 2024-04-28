@@ -1,6 +1,11 @@
 use std::fmt;
 
-use crate::{create_bytes, parser, Compilable, Parser, ParserResult, Value};
+use crate::{
+    create_bytes,
+    parser::{self, Parser, ParserResult},
+    tokens::Value,
+    Compilable,
+};
 
 create_bytes! {0;
     TYPE_ANON,

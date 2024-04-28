@@ -1,4 +1,4 @@
-use crate::{parser, Parser, ParserResult};
+use crate::parser::{self, Parser, ParserResult};
 
 pub struct Aml3Variable;
 

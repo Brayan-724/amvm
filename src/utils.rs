@@ -32,7 +32,7 @@ pub trait Compilable {
     fn compile_bytecode(&self) -> Box<str>;
 }
 
-impl Compilable for [crate::Command] {
+impl Compilable for [crate::tokens::Command] {
     fn compile_bytecode(&self) -> Box<str> {
         self.iter()
             .map(|c| c.compile_bytecode().to_string())
@@ -44,30 +44,30 @@ impl Compilable for [crate::Command] {
 
 impl Compilable for String {
     fn compile_bytecode(&self) -> Box<str> {
-        Box::from(crate::Value::compile_string(self))
+        Box::from(crate::tokens::Value::compile_string(self))
     }
 }
 
 impl Compilable for &String {
     fn compile_bytecode(&self) -> Box<str> {
-        Box::from(crate::Value::compile_string(self))
+        Box::from(crate::tokens::Value::compile_string(self))
     }
 }
 
 impl Compilable for &str {
     fn compile_bytecode(&self) -> Box<str> {
-        Box::from(crate::Value::compile_string(self))
+        Box::from(crate::tokens::Value::compile_string(self))
     }
 }
 
 impl Compilable for Box<str> {
     fn compile_bytecode(&self) -> Box<str> {
-        Box::from(crate::Value::compile_string(self))
+        Box::from(crate::tokens::Value::compile_string(self))
     }
 }
 
 impl Compilable for &Box<str> {
     fn compile_bytecode(&self) -> Box<str> {
-        Box::from(crate::Value::compile_string(self))
+        Box::from(crate::tokens::Value::compile_string(self))
     }
 }

@@ -1,5 +1,7 @@
-use crate::runtime::{expr, AmvmError, AmvmPropagate, AmvmResult};
-use crate::{AmvmScope, CommandExpression, Value, ValueObject};
+use crate::{
+    runtime::{expr, AmvmError, AmvmPropagate, AmvmResult},
+    tokens::{AmvmScope, CommandExpression, Value, ValueObject},
+};
 
 pub fn eval(
     scope: &mut AmvmScope,

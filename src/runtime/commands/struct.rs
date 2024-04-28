@@ -1,6 +1,7 @@
-use crate::runtime::AmvmResult;
-use crate::tokens::AmvmType;
-use crate::{AmvmScope, AmvmTypeDefinition, Value};
+use crate::{
+    runtime::AmvmResult,
+    tokens::{AmvmScope, AmvmType, AmvmTypeDefinition, Value},
+};
 
 pub fn eval(
     scope: &mut AmvmScope,

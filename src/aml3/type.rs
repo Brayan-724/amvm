@@ -1,5 +1,7 @@
-use crate::tokens::AmvmType;
-use crate::{parser, Parser, ParserResult};
+use crate::{
+    parser::{self, Parser, ParserResult},
+    tokens::AmvmType,
+};
 
 pub struct Aml3Type;
 

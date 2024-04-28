@@ -1,8 +1,9 @@
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
-use crate::{Value, VariableKind};
-
-use super::{AmvmError, AmvmPropagate, AmvmResult};
+use crate::{
+    runtime::{AmvmError, AmvmPropagate, AmvmResult},
+    tokens::{Value, VariableKind},
+};
 
 #[derive(Clone, Debug)]
 pub struct Variable {
@@ -31,7 +32,6 @@ impl AmvmVariable {
     pub fn read(&self) -> Arc<Value> {
         match self {
             Self::Const(v) => v.clone(),
-            // FIXME: No clones
             Self::Mut(v) | Self::Let(v) | Self::Var(v) => Arc::new(v.read().unwrap().to_owned()),
         }
     }

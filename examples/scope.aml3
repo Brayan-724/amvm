@@ -1,13 +1,13 @@
-@let $x 0u8
+@declare let $x 0u8
 
 {
-  @const $y "Hello Y!"
+  @declare $y "Hello Y!"
 
-  =$x +$x 1u8
+  =$x + $x 1u8
 
-  @puts +"Inner X = " $x
-  @puts +"\nInner Y = " $y
+  @puts + "Inner X = " $x
+  @puts + "\nInner Y = " $y
 }
 
-@puts +"\nX = " $x
-@puts +"\nY = " $y
+@puts + "\nX = " $x
+@puts + "\nY = " $y

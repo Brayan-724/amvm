@@ -1,12 +1,8 @@
-@struct #Animal {
-  breed #string
-}
-
 @struct #Person {
   name #string
 }
 
-@declare $obj #+ #Person #Animal { name "NAME" breed "Human" }
+@declare $obj #Person { name "NAME" breed "Human" }
 
 @puts $obj
 @puts '\n

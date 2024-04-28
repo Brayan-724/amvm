@@ -3,6 +3,6 @@ use crate::{
     tokens::{AmvmScope, Value},
 };
 
-pub fn eval(_: &mut AmvmScope, v: &Value) -> AmvmResult {
-    Ok(v.clone())
+pub fn eval(_scope: &mut AmvmScope) -> AmvmResult {
+    Ok(Value::U8(1))
 }

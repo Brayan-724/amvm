@@ -1,4 +1,4 @@
-@const $a 1u8
-@const $b 2u8
-@const $c +$a $b
+@declare $a 1u8
+@declare $b 2u8
+@declare $c + $a $b
 @puts $c

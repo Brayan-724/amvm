@@ -71,7 +71,7 @@ impl Parser<'_> {
 
             format!("{line} | {code_line}\n{line_pad} | {cursor_pad}^")
         } else {
-            let line = parser.line.to_string();
+            let line = (parser.line + 1).to_string();
             let line_pad = " ".repeat(line.len());
 
             let code_line = &parser.input[parser.line_byte_start..];
@@ -231,7 +231,7 @@ impl<'a> Parser<'a> {
     /// [Parser::pointer_position]
     #[inline(always)]
     pub fn cursor_position(&self) -> (usize, usize) {
-        (self.line, self.column())
+        (self.line + 1, self.column())
     }
 
     /// Cursor in bytes.

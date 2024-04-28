@@ -1,8 +1,11 @@
 use std::fmt;
 
-use crate::parser::{self, ParserResult};
-use crate::{compilable_enum, Compilable, Parser};
-use crate::{AMVM_HEADER, COMMAND_SEPARATOR};
+use crate::{
+    compilable_enum,
+    parser::{self, Parser, ParserResult},
+    tokens::{AMVM_HEADER, COMMAND_SEPARATOR},
+    Compilable,
+};
 
 compilable_enum!(pub AmvmTypeCasting {
     /// Try to cast types, but throws if it can't cast.

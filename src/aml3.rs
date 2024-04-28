@@ -25,7 +25,8 @@ pub use value::Aml3Value;
 mod variable;
 pub use variable::Aml3Variable;
 
-use crate::{Command, Parser};
+use crate::parser::Parser;
+use crate::tokens::Command;
 
 pub fn from_str(source: &str) -> Result<Vec<Command>, String> {
     let parser = Parser::new(source, &false);

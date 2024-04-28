@@ -1,0 +1,17 @@
+@fn #null $console.log $obj # {
+  @puts $obj
+}
+
+@fn #u8 $add $a #u8 $b #u8 {
+  @ret + $a $b
+}
+
+@declare $a 1u8
+@declare $b 2u8
+
+@puts + $a + " + " + $b '\n
+
+@call "add" $a $b
+@declare $c _
+
+@call "console.log" + "= " $c

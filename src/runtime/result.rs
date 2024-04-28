@@ -1,6 +1,4 @@
-use crate::Value;
-
-use super::AmvmError;
+use crate::{runtime::AmvmError, tokens::Value};
 
 #[derive(Debug, Clone)]
 pub enum AmvmPropagate {

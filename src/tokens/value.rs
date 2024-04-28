@@ -1,17 +1,23 @@
 use std::collections::HashMap;
 
-use crate::parser::{self, anychar, ParserResult};
-use crate::{AmvmType, COMMAND_SEPARATOR};
-use crate::{CommandExpression, Compilable, Parser};
+use crate::{
+    create_bytes,
+    parser::{self, Parser, ParserResult},
+    tokens::{AmvmType, Command, CommandExpression, COMMAND_SEPARATOR},
+    Compilable,
+};
 
-pub static VALUE_UNDEFINED: char = '\x30';
-pub static VALUE_BOOL: char = '\x31';
-pub static VALUE_STRING: char = '\x32';
-pub static VALUE_U8: char = '\x33';
-pub static VALUE_I16: char = '\x34';
-pub static VALUE_F32: char = '\x35';
-pub static VALUE_OBJECT: char = '\x36';
-pub static VALUE_CHAR: char = '\x37';
+create_bytes! {0x30;
+    VALUE_UNDEFINED,
+    VALUE_BOOL,
+    VALUE_STRING,
+    VALUE_U8,
+    VALUE_I16,
+    VALUE_F32,
+    VALUE_OBJECT,
+    VALUE_CHAR,
+    VALUE_FUN
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "useron", derive(Serialize, Deserialize))]
@@ -19,6 +25,13 @@ pub enum ValueObject {
     Native(*mut u32),
     Instance(AmvmType, HashMap<String, Value>),
     PropertyMap(HashMap<String, Value>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "useron", derive(Serialize, Deserialize))]
+pub enum ValueFun {
+    Const(Vec<(Box<str>, AmvmType)>, AmvmType, Vec<Command>),
+    Mutable(Vec<(Box<str>, AmvmType)>, AmvmType, Vec<Command>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,12 +45,13 @@ pub enum Value {
     I16(i16),
     F32(f32),
     Object(ValueObject),
+    Fun(ValueFun),
 }
 
 impl ValueObject {
     pub fn to_native_mutable<T>(&self) -> Option<&mut T> {
         if let Self::Native(ptr) = self {
-            unsafe { (*ptr as *mut T).as_mut() }
+            unsafe { Some(&mut *(*ptr as *mut T)) }
         } else {
             None
         }
@@ -66,6 +80,19 @@ impl Value {
             Self::Object(v) => match v {
                 ValueObject::Native(ref v) => format!("[Object 0x{:08x}]", *v as u32),
                 _ => todo!(),
+            },
+            Self::Fun(v) => match v {
+                ValueFun::Const(ref args, ret, _) | ValueFun::Mutable(ref args, ret, _) => {
+                    format!(
+                        "[Function ({args}) {ret}]",
+                        args = args
+                            .iter()
+                            .map(|a| format!("{name}: {ty}", name = a.0, ty = a.1.flat_name()))
+                            .collect::<Vec<String>>()
+                            .join(", "),
+                        ret = ret.flat_name()
+                    )
+                }
             },
         }
     }
@@ -124,7 +151,8 @@ impl Compilable for Value {
                 ]),
             ),
             Self::F32(v) => format!("{VALUE_F32}{v}{COMMAND_SEPARATOR}",),
-            Self::Object(_) => format!("{VALUE_OBJECT}"),
+            Self::Object(_) => todo!(),
+            Self::Fun(_) => todo!(),
         })
     }
 }
@@ -133,13 +161,14 @@ impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Null => f.write_str("null"),
-            Self::Char(v) => f.write_fmt(format_args!("{v:?}")),
-            Self::String(v) => f.write_fmt(format_args!("{v:?}")),
+            Self::Char(v) => write!(f, "{v:?}"),
+            Self::String(v) => write!(f, "{v:?}"),
             Self::Bool(v) => f.write_fmt(format_args!("{v:?}")),
             Self::U8(v) => f.write_fmt(format_args!("{v}u8")),
             Self::I16(v) => f.write_fmt(format_args!("{v}i16")),
             Self::F32(v) => f.write_fmt(format_args!("{v}f32")),
             Self::Object(_) => f.write_str("[Native Object]"),
+            Self::Fun(_) => f.write_str("[Function]"),
         }
     }
 }
@@ -176,14 +205,14 @@ impl Into<Option<Box<CommandExpression>>> for Value {
 
 impl Value {
     fn visit_u8<'a>(parser: Parser<'a>) -> ParserResult<'a, u8> {
-        let (parser, value) = anychar(parser)?;
+        let (parser, value) = parser::anychar(parser)?;
 
         Ok((parser, value as u8))
     }
 
     fn visit_u16<'a>(parser: Parser<'a>) -> ParserResult<'a, u16> {
-        let (parser, b1) = anychar(parser)?;
-        let (parser, b2) = anychar(parser)?;
+        let (parser, b1) = parser::anychar(parser)?;
+        let (parser, b2) = parser::anychar(parser)?;
 
         // b1 -> 0xFF00
         // b2 -> 0x00FF
@@ -206,7 +235,7 @@ impl Value {
                 let _tracing_span = tracing::trace_span!("bool");
                 let _tracing_span = _tracing_span.enter();
 
-                let (parser, value) = anychar(parser)
+                let (parser, value) = parser::anychar(parser)
                     .map_err(parser.nom_err_with_context("Expected boolean value"))?;
                 (parser, Value::Bool(value == '\x01'))
             }
@@ -221,7 +250,7 @@ impl Value {
                 let _tracing_span = tracing::trace_span!("i16");
                 let _tracing_span = _tracing_span.enter();
 
-                let (parser, sign) = anychar(parser)?;
+                let (parser, sign) = parser::anychar(parser)?;
                 let sign: i16 = if sign == '\x01' { 1 } else { -1 };
 
                 let (parser, num) = Value::visit_u16(parser)?;
@@ -239,7 +268,7 @@ impl Value {
 
                 let mut carrier = vec![];
                 loop {
-                    let (parser, b) = anychar(parser)?;
+                    let (parser, b) = parser::anychar(parser)?;
                     // "Can't get value on f32",
 
                     if b == '\x00' {

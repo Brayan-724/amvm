@@ -1,5 +1,9 @@
-use crate::parser::{self, ParserResult, CMD_VERBOSE};
-use crate::{AmvmHeader, Command, Compilable, Parser, Runtime};
+use crate::{
+    parser::{self, Parser, ParserResult, CMD_VERBOSE},
+    runtime::Runtime,
+    tokens::{AmvmHeader, Command},
+    Compilable,
+};
 
 pub struct Program {
     pub header: AmvmHeader,
@@ -18,6 +22,7 @@ impl Program {
         let (parser, header) = AmvmHeader::visit(parser)?;
 
         let (_, parser) = parser::take(1usize)(parser)?;
+        let parser = parser.new_line();
 
         let mut cmds = vec![];
         let mut parser = parser;

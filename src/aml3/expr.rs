@@ -1,7 +1,8 @@
-use crate::aml3::{Aml3Struct, Aml3Type};
-use crate::{parser, BinaryConditionKind, CommandExpression, Parser, ParserResult};
-
-use super::{Aml3Value, Aml3Variable};
+use crate::{
+    aml3::{Aml3Struct, Aml3Type, Aml3Value, Aml3Variable},
+    parser::{self, Parser, ParserResult},
+    tokens::{BinaryKind, CommandExpression},
+};
 
 pub struct Aml3Expr;
 
@@ -25,8 +26,8 @@ macro_rules! impl_op {
     (@binary $parser:ident, $command:ident) => {{
         let (parser, a, b) = impl_op!(@common "binary", $parser, $command);
 
-        Ok((parser, CommandExpression::BinaryCondition(
-            BinaryConditionKind::$command, a.into(), b.into()
+        Ok((parser, CommandExpression::Binary(
+            BinaryKind::$command, a.into(), b.into()
         )))
     }};
 }
@@ -40,12 +41,12 @@ impl Aml3Expr {
         tracing::trace!(expr.char = ?kind);
 
         match kind {
-            '+' => impl_op!(@single consumed_parser, Addition),
-            '-' => impl_op!(@single consumed_parser, Substraction),
-            '.' => impl_op!(@single consumed_parser, Property),
+            '+' => impl_op!(@binary consumed_parser, Add),
+            '-' => impl_op!(@binary consumed_parser, Sub),
+            '*' => impl_op!(@binary consumed_parser, Mult),
 
             '#' => {
-                let (parser, name) = Aml3Type::visit(consumed_parser)?;
+                let (parser, name) = Aml3Type::visit(parser)?;
                 let (parser, _) = parser::char(' ')(parser)?;
                 let (parser, decl) = Aml3Struct::visit_def_block(parser)?;
                 let decl = decl.into_iter().map(|v| (Box::from(v.0), v.1)).collect();
@@ -60,7 +61,8 @@ impl Aml3Expr {
 
             '_' => Ok((consumed_parser, CommandExpression::Prev)),
 
-            '!' | '>' | '<' | '=' => {
+            // Possible two character operator
+            '!' | '>' | '<' | '=' | '.' => {
                 let parser = consumed_parser;
                 let (consumed_parser, second_kind) = parser::anychar(parser)
                     .map_err(parser.nom_err_with_context("Expected operator"))?;
@@ -78,6 +80,9 @@ impl Aml3Expr {
                     ('!', '=') => impl_op!(@binary consumed_parser, NotEqual),
                     // TODO:
                     // ('!', ' ') => impl_op!(@single parser, Negate),
+                    ('.', '.') => impl_op!(@single consumed_parser, Range),
+                    ('.', _) => impl_op!(@single parser, Property),
+
                     _ => Err(parser.error(
                         parser::VerboseErrorKind::Context("Expected boolean operator"),
                         true,

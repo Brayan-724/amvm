@@ -1,4 +1,4 @@
-use amvm::*;
+use amvm::{parser::Parser, runtime::*, tokens::*, *};
 
 fn compile(mut args: impl Iterator<Item = String>) -> Result<(), String> {
     let source = args.next().expect("Provide file path to the source file");
@@ -45,13 +45,12 @@ fn jit(mut args: impl Iterator<Item = String>) -> Result<(), String> {
         sum_kind: AmvmTypeCasting::TypeCastingStrictlessString,
     };
     let program = Program::new(header, commands);
-    let content = program.compile_bytecode();
-
-    let parser = Parser::new(&content, &true);
-    let (_, program) = Program::visit(parser)
-        .map_err(Parser::flat_errors)
-        .map_err(|err| format!("{err}"))?;
-    program.runtime().run().unwrap();
+    let mut runtime = program.runtime();
+    runtime.run().map_err(|err| match err {
+        AmvmPropagate::Err(err) => err.to_string(),
+        AmvmPropagate::Return(_) => "Returning outside function scope".to_owned(),
+        AmvmPropagate::Break => "Breaking outside loop scope".to_owned(),
+    })?;
 
     Ok(())
 }
@@ -69,8 +68,7 @@ fn inspect(mut args: impl Iterator<Item = String>) -> Result<(), String> {
         let cmd = format!("{cmd}");
         let cmd = cmd
             .split('\n')
-            .map(|c| format!("{i}{c}\n"))
-            .collect::<String>();
+            .fold(String::new(), |prev, c| format!("{prev}{i}{c}\n"));
         print!("{cmd}");
     }
 
@@ -107,50 +105,29 @@ fn main() {
     let mut args = std::env::args().skip(1);
 
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
-        // .with_max_level(tracing::Level::TRACE)
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_timer(tracing_subscriber::fmt::time::Uptime::default())
         .finish();
 
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    match args.next().as_deref() {
-        Some("run") => {
-            let Err(err) = run(args) else {
-                return;
-            };
+    let res = match args.next().as_deref() {
+        Some("run") => run(args),
+        Some("compile") => compile(args),
+        Some("inspect") => inspect(args),
+        Some("aml3") => aml3(args),
+        Some("jit") => jit(args),
 
-            eprintln!("\x1b[31m{err}\x1b[0m");
-        }
-        Some("compile") => {
-            let Err(err) = compile(args) else {
-                return;
-            };
-
-            eprintln!("\x1b[31m{err}\x1b[0m");
-        }
-        Some("inspect") => {
-            let Err(err) = inspect(args) else {
-                return;
-            };
-
-            eprintln!("\x1b[31m{err}\x1b[0m");
+        Some(cmd) => {
+            help();
+            Err(format!("Unknown command: {cmd}"))
         }
 
-        Some("aml3") => {
-            let Err(err) = aml3(args) else {
-                return;
-            };
+        None => Err("No command".to_owned()),
+    };
 
-            eprintln!("\x1b[31m{err}\x1b[0m");
-        }
-        Some("jit") => {
-            let Err(err) = jit(args) else {
-                return;
-            };
-
-            eprintln!("\x1b[31m{err}\x1b[0m");
-        }
-
-        _ => help(),
+    if let Err(err) = res {
+        eprintln!("\x1b[31m{err}\x1b[0m");
+        std::process::exit(1);
     }
 }

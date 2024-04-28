@@ -1,3 +1,9 @@
+use std::io::Write;
+use std::sync::RwLock;
+use std::{collections::HashMap, sync::Arc};
+
+use crate::tokens::{AmvmHeader, AmvmScope, AmvmTypeDefinition, Command, Value};
+
 mod commands;
 mod error;
 mod expr;
@@ -6,15 +12,9 @@ mod scope;
 pub mod variable;
 
 pub use error::AmvmError;
+pub use expr::AmvmExprResult;
 pub use result::{AmvmPropagate, AmvmResult};
-
-use crate::{AmvmHeader, AmvmScope, AmvmTypeDefinition, Command, Value};
-use std::io::Write;
-use std::sync::RwLock;
-use std::{collections::HashMap, sync::Arc};
-
-use self::expr::AmvmExprResult;
-use self::variable::AmvmVariable;
+pub use variable::AmvmVariable;
 
 #[derive(Debug, Clone)]
 pub struct Context {

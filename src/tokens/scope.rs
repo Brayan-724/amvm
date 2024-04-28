@@ -2,8 +2,11 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
-use crate::runtime::Context;
-use crate::{AmvmHeader, Command, Compilable, COMMAND_SEPARATOR};
+use crate::{
+    runtime::Context,
+    tokens::{AmvmHeader, Command, COMMAND_SEPARATOR},
+    Compilable,
+};
 
 #[derive(Debug, Clone)]
 pub struct AmvmScope {

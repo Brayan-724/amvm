@@ -1,80 +1,89 @@
-use crate::parser::ParserResult;
-use crate::{parser, Compilable, Parser, Value};
+use crate::{
+    create_bytes,
+    parser::{self, Parser, ParserResult},
+    tokens::Value,
+    Compilable,
+};
 
 use super::AmvmType;
 
-pub static EXPR_VALUE: char = '\x11';
-pub static EXPR_VAR: char = '\x12';
-pub static EXPR_PROP: char = '\x13';
-pub static EXPR_ADD: char = '\x14';
-pub static EXPR_SUB: char = '\x15';
-pub static EXPR_COND: char = '\x16';
-pub static EXPR_PREV: char = '\x18';
-pub static EXPR_STRUCT: char = '\x19';
-
-pub static EXPR_COND_LESS_THAN: char = '\x01';
-pub static EXPR_COND_LESS_THAN_EQUAL: char = '\x02';
-pub static EXPR_COND_GREATER_THAN: char = '\x03';
-pub static EXPR_COND_GREATER_THAN_EQUAL: char = '\x04';
-pub static EXPR_COND_EQUAL: char = '\x05';
-pub static EXPR_COND_NOT_EQUAL: char = '\x06';
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum BinaryConditionKind {
-    LessThan,
-    LessThanEqual,
-    GreaterThan,
-    GreaterThanEqual,
-    Equal,
-    NotEqual,
+create_bytes! {0x10;
+    EXPR_BINARY,
+    EXPR_PREV,
+    EXPR_PROP,
+    EXPR_RANGE,
+    EXPR_STRUCT,
+    EXPR_VALUE,
+    EXPR_VAR
 }
 
-impl Compilable for BinaryConditionKind {
+create_bytes! {0x0;
+    EXPR_KIND_ADD,
+    EXPR_KIND_SUB,
+    EXPR_KIND_MUL,
+
+    /// Conditionals
+    EXPR_KIND_EQUAL,
+    EXPR_KIND_NOT_EQUAL,
+    EXPR_KIND_GREATER_THAN,
+    EXPR_KIND_GREATER_THAN_EQUAL,
+    EXPR_KIND_LESS_THAN,
+    EXPR_KIND_LESS_THAN_EQUAL
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BinaryKind {
+    Add,
+    Sub,
+    Mult,
+
+    // Conditionals
+    Equal,
+    NotEqual,
+    GreaterThan,
+    GreaterThanEqual,
+    LessThan,
+    LessThanEqual,
+}
+
+impl Compilable for BinaryKind {
     fn compile_bytecode(&self) -> Box<str> {
         Box::from(match self {
-            Self::LessThan => EXPR_COND_LESS_THAN.to_string(),
-            Self::LessThanEqual => EXPR_COND_LESS_THAN_EQUAL.to_string(),
-            Self::GreaterThan => EXPR_COND_GREATER_THAN.to_string(),
-            Self::GreaterThanEqual => EXPR_COND_GREATER_THAN_EQUAL.to_string(),
-            Self::Equal => EXPR_COND_EQUAL.to_string(),
-            Self::NotEqual => EXPR_COND_NOT_EQUAL.to_string(),
+            Self::Add => EXPR_KIND_ADD.to_string(),
+            Self::Sub => EXPR_KIND_SUB.to_string(),
+            Self::Mult => EXPR_KIND_MUL.to_string(),
+            // Conditionals
+            Self::Equal => EXPR_KIND_EQUAL.to_string(),
+            Self::NotEqual => EXPR_KIND_NOT_EQUAL.to_string(),
+            Self::GreaterThan => EXPR_KIND_GREATER_THAN.to_string(),
+            Self::GreaterThanEqual => EXPR_KIND_GREATER_THAN_EQUAL.to_string(),
+            Self::LessThan => EXPR_KIND_LESS_THAN.to_string(),
+            Self::LessThanEqual => EXPR_KIND_LESS_THAN_EQUAL.to_string(),
         })
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandExpression {
+    Binary(BinaryKind, Box<CommandExpression>, Box<CommandExpression>),
     Prev,
-
+    Property(Box<CommandExpression>, Box<CommandExpression>),
+    Range(Box<CommandExpression>, Box<CommandExpression>),
+    Struct(AmvmType, Vec<(Box<str>, CommandExpression)>),
     Value(Value),
     Var(String),
-
-    Property(Box<CommandExpression>, Box<CommandExpression>),
-
-    Addition(Box<CommandExpression>, Box<CommandExpression>),
-    Substraction(Box<CommandExpression>, Box<CommandExpression>),
-
-    BinaryCondition(
-        BinaryConditionKind,
-        Box<CommandExpression>,
-        Box<CommandExpression>,
-    ),
-
-    Struct(AmvmType, Vec<(Box<str>, CommandExpression)>),
 }
 
 impl std::fmt::Display for CommandExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Binary(kind, a, b) => write!(f, "{a} {kind:?} {b}"),
             Self::Prev => f.write_str("Prev"),
+            Self::Property(a, b) => write!(f, "({a})[{b}]"),
+            Self::Range(a, b) => write!(f, "({a}) .. ({b})"),
+            Self::Struct(t, data) => write!(f, "{t} {data:?}"),
             Self::Value(v) => (v as &dyn std::fmt::Display).fmt(f),
-            Self::Var(v) => f.write_fmt(format_args!("${v}")),
-            Self::Property(a, b) => f.write_fmt(format_args!("({a})[{b}]")),
-            Self::Struct(t, data) => f.write_fmt(format_args!("{t} {data:?}")),
-
-            Self::Addition(a, b) => f.write_fmt(format_args!("{a} + {b}")),
-            Self::Substraction(a, b) => f.write_fmt(format_args!("{a} - {b}")),
-            Self::BinaryCondition(kind, a, b) => f.write_fmt(format_args!("{a} {kind:?} {b}")),
+            Self::Var(v) => write!(f, "${v}"),
         }
     }
 }
@@ -86,31 +95,35 @@ impl Into<Option<Box<CommandExpression>>> for CommandExpression {
 }
 
 impl CommandExpression {
-    pub fn visit_cond<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
+    #[inline]
+    fn condition<'a>(parser: Parser<'a>, kind: BinaryKind) -> ParserResult<'a, Self> {
+        let (parser, a) = CommandExpression::visit(parser)?;
+        let (parser, b) = CommandExpression::visit(parser)?;
+
+        Ok((parser, CommandExpression::Binary(kind, a.into(), b.into())))
+    }
+
+    pub fn visit_binary<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
         let (parser, kind) = parser::anychar(parser)
             .map_err(parser.nom_err_with_context("Expected conditional kind"))?;
 
-        let condition = |kind: BinaryConditionKind| -> ParserResult<'a, Self> {
-            let (parser, a) = CommandExpression::visit(parser)?;
-            let (parser, b) = CommandExpression::visit(parser)?;
-
-            Ok((
-                parser,
-                CommandExpression::BinaryCondition(kind, a.into(), b.into()),
-            ))
-        };
-
         match kind {
-            k if k == EXPR_COND_LESS_THAN => condition(BinaryConditionKind::LessThan),
-            k if k == EXPR_COND_LESS_THAN_EQUAL => condition(BinaryConditionKind::LessThanEqual),
+            k if k == EXPR_KIND_ADD => Self::condition(parser, BinaryKind::Add),
+            k if k == EXPR_KIND_SUB => Self::condition(parser, BinaryKind::Sub),
+            k if k == EXPR_KIND_MUL => Self::condition(parser, BinaryKind::Mult),
 
-            k if k == EXPR_COND_GREATER_THAN => condition(BinaryConditionKind::GreaterThan),
-            k if k == EXPR_COND_GREATER_THAN_EQUAL => {
-                condition(BinaryConditionKind::GreaterThanEqual)
+            k if k == EXPR_KIND_EQUAL => Self::condition(parser, BinaryKind::Equal),
+            k if k == EXPR_KIND_NOT_EQUAL => Self::condition(parser, BinaryKind::NotEqual),
+
+            k if k == EXPR_KIND_GREATER_THAN => Self::condition(parser, BinaryKind::GreaterThan),
+            k if k == EXPR_KIND_GREATER_THAN_EQUAL => {
+                Self::condition(parser, BinaryKind::GreaterThanEqual)
             }
 
-            k if k == EXPR_COND_EQUAL => condition(BinaryConditionKind::Equal),
-            k if k == EXPR_COND_NOT_EQUAL => condition(BinaryConditionKind::NotEqual),
+            k if k == EXPR_KIND_LESS_THAN => Self::condition(parser, BinaryKind::LessThan),
+            k if k == EXPR_KIND_LESS_THAN_EQUAL => {
+                Self::condition(parser, BinaryKind::LessThanEqual)
+            }
 
             _ => Err(parser.error(
                 parser::VerboseErrorKind::Context("Unknown conditional kind"),
@@ -124,37 +137,21 @@ impl CommandExpression {
             .map_err(parser_.nom_err_with_context("Expected expression kind"))?;
 
         match b {
-            b if b == EXPR_PREV => Ok((parser, CommandExpression::Prev)),
-            b if b == EXPR_VAR => {
-                let (parser, value) = Value::visit_string(parser)?;
-                let value = value.to_owned();
-                Ok((parser, CommandExpression::Var(value)))
-            }
-            b if b == EXPR_ADD => {
-                let (parser, a) = CommandExpression::visit(parser)?;
-                let (parser, b) = CommandExpression::visit(parser)?;
-
-                Ok((parser, CommandExpression::Addition(a.into(), b.into())))
-            }
-            b if b == EXPR_SUB => {
-                let (parser, a) = CommandExpression::visit(parser)?;
-                let (parser, b) = CommandExpression::visit(parser)?;
-
-                Ok((parser, CommandExpression::Substraction(a.into(), b.into())))
-            }
-            b if b == EXPR_PROP => {
+            _ if b == EXPR_BINARY => Self::visit_binary(parser),
+            _ if b == EXPR_PREV => Ok((parser, CommandExpression::Prev)),
+            _ if b == EXPR_PROP => {
                 let (parser, a) = CommandExpression::visit(parser)?;
                 let (parser, b) = CommandExpression::visit(parser)?;
 
                 Ok((parser, CommandExpression::Property(a.into(), b.into())))
             }
-            b if b == EXPR_VALUE => {
-                let (parser, value) = Value::visit(parser)?;
+            _ if b == EXPR_RANGE => {
+                let (parser, a) = CommandExpression::visit(parser)?;
+                let (parser, b) = CommandExpression::visit(parser)?;
 
-                Ok((parser, CommandExpression::Value(value)))
+                Ok((parser, CommandExpression::Range(a.into(), b.into())))
             }
-            b if b == EXPR_COND => Self::visit_cond(parser),
-            b if b == EXPR_STRUCT => {
+            _ if b == EXPR_STRUCT => {
                 let (parser, r#type) = AmvmType::visit(parser)?;
                 let (parser, fields_len) = parser::anychar(parser)
                     .map_err(parser.nom_err_with_context("Expected fields length"))?;
@@ -172,6 +169,16 @@ impl CommandExpression {
 
                 Ok((parser, CommandExpression::Struct(r#type, data)))
             }
+            _ if b == EXPR_VALUE => {
+                let (parser, value) = Value::visit(parser)?;
+
+                Ok((parser, CommandExpression::Value(value)))
+            }
+            _ if b == EXPR_VAR => {
+                let (parser, value) = Value::visit_string(parser)?;
+                let value = value.to_owned();
+                Ok((parser, CommandExpression::Var(value)))
+            }
             _ => Err(parser_.error(
                 parser::VerboseErrorKind::Context("Unknown expression kind"),
                 true,
@@ -183,32 +190,31 @@ impl CommandExpression {
 impl Compilable for CommandExpression {
     fn compile_bytecode(&self) -> Box<str> {
         Box::from(match self {
-            Self::Prev => EXPR_PREV.to_string(),
-            Self::Value(v) => format!("{EXPR_VALUE}{}", v.compile_bytecode()),
-            Self::Var(var) => format!("{EXPR_VAR}{}", Value::compile_string(var)),
-            Self::Struct(r#type, data) => format!(
-                "{EXPR_STRUCT}{}{}",
-                r#type.compile_bytecode(),
-                data.compile_bytecode()
-            ),
-            Self::BinaryCondition(kind, a, b) => {
+            Self::Binary(kind, a, b) => {
                 let kind = kind.compile_bytecode();
                 let a = a.compile_bytecode();
                 let b = b.compile_bytecode();
 
-                format!("{EXPR_COND}{kind}{a}{b}")
+                format!("{EXPR_BINARY}{kind}{a}{b}")
             }
+            Self::Prev => EXPR_PREV.to_string(),
             Self::Property(a, b) => format!(
                 "{EXPR_PROP}{}{}",
                 a.compile_bytecode(),
                 b.compile_bytecode()
             ),
-            Self::Addition(a, b) => {
-                format!("{EXPR_ADD}{}{}", a.compile_bytecode(), b.compile_bytecode())
-            }
-            Self::Substraction(a, b) => {
-                format!("{EXPR_SUB}{}{}", a.compile_bytecode(), b.compile_bytecode())
-            }
+            Self::Range(a, b) => format!(
+                "{EXPR_RANGE}{}{}",
+                a.compile_bytecode(),
+                b.compile_bytecode()
+            ),
+            Self::Struct(r#type, data) => format!(
+                "{EXPR_STRUCT}{}{}",
+                r#type.compile_bytecode(),
+                data.compile_bytecode()
+            ),
+            Self::Value(v) => format!("{EXPR_VALUE}{}", v.compile_bytecode()),
+            Self::Var(var) => format!("{EXPR_VAR}{}", Value::compile_string(var)),
         })
     }
 }

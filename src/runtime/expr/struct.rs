@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::runtime::{expr, AmvmResult};
-use crate::{AmvmScope, AmvmType, CommandExpression, Value, ValueObject};
+use crate::{
+    runtime::{expr, AmvmResult},
+    tokens::{AmvmScope, AmvmType, CommandExpression, Value, ValueObject},
+};
 
 pub fn eval(
     scope: &mut AmvmScope,

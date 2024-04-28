@@ -1,4 +1,4 @@
-use amvm::*;
+use amvm::{tokens::*, *};
 
 macro_rules! test_numeric_it {
     ($val:expr; $i:ident; $ty:ident) => {
@@ -29,14 +29,16 @@ fn main() {
 
     assert_eq!(
         amvm_expr!(+(1 u8) (2 u8)),
-        CommandExpression::Addition(
+        CommandExpression::Binary(
+            BinaryKind::Add,
             Box::new(CommandExpression::Value(Value::U8(1))),
             Box::new(CommandExpression::Value(Value::U8(2)))
         )
     );
     assert_eq!(
         amvm_expr!(+($var) (2 u8)),
-        CommandExpression::Addition(
+        CommandExpression::Binary(
+            BinaryKind::Add,
             Box::new(CommandExpression::Var(String::from("var"))),
             Box::new(CommandExpression::Value(Value::U8(2)))
         )

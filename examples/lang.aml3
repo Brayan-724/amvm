@@ -12,7 +12,7 @@
 
   ; Declare no overwritable and no mutable variable (const-solid)
   ; - Default
-  @declare $const_var 1
+  @declare $const_var 1u8
 
   ; Declare no overwritable, but mutable variable (const-mut)
   ; Cannot be reassigned with `=$mut_var ..`, but 
@@ -32,7 +32,7 @@
   ; @puts $let_var 
   ; ----> 2
   ; ```
-  @declare let $let_var 1
+  @declare let $let_var 1u8
 
   ; Declare overwritable and mutable variable (let-mut)
   ; Can be reassigned with `=$let_var ..`, but 
@@ -42,7 +42,7 @@
   ; @puts $var 
   ; ----> 2
   ; ```
-  @declare var $var 1
+  @declare var $var 1u8
 }
 
 ; --- TODO Details
@@ -63,8 +63,9 @@
   @puts "Hello World!"
 
   ; For loops
-  @for $char : $a {
-    @puts $char + "\n"
+  @call . $a "iter"
+  @for $char _ {
+    @puts + $char '\n
   }
 
   ; Compiled version:

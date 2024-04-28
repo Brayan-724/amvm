@@ -1,6 +1,7 @@
-use crate::{AmvmScope, Command, Value};
-
-use super::{commands, AmvmResult};
+use crate::{
+    runtime::{commands, AmvmResult},
+    tokens::{AmvmScope, Command, Value},
+};
 
 pub fn eval(scope: &mut AmvmScope, body: &Vec<Command>, use_same: bool) -> AmvmResult {
     if use_same {
@@ -8,7 +9,7 @@ pub fn eval(scope: &mut AmvmScope, body: &Vec<Command>, use_same: bool) -> AmvmR
             commands::eval(scope, cmd)?;
         }
     } else {
-        let mut scope = scope.create_sub(body.clone());
+        let mut scope = scope.create_sub(body.to_vec());
 
         for cmd in scope.body.clone().iter() {
             commands::eval(&mut scope, cmd)?;

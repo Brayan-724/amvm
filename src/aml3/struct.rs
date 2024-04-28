@@ -1,6 +1,8 @@
-use crate::aml3::{Aml3Expr, Aml3Variable};
-use crate::tokens::AmvmType;
-use crate::{parser, CommandExpression, Parser, ParserResult};
+use crate::{
+    aml3::{Aml3Expr, Aml3Variable},
+    parser::{self, Parser, ParserResult},
+    tokens::{AmvmType, CommandExpression},
+};
 
 use super::Aml3Type;
 

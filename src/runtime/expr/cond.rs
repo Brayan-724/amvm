@@ -1,9 +1,11 @@
-use crate::runtime::{expr, AmvmResult};
-use crate::{AmvmScope, BinaryConditionKind, CommandExpression, Value};
+use crate::{
+    runtime::{expr, AmvmResult},
+    tokens::{AmvmScope, BinaryKind, CommandExpression, Value},
+};
 
 pub fn eval(
     scope: &mut AmvmScope,
-    kind: &BinaryConditionKind,
+    kind: &BinaryKind,
     a: &CommandExpression,
     b: &CommandExpression,
 ) -> AmvmResult {
@@ -13,17 +15,17 @@ pub fn eval(
     let b = binding.as_ref();
 
     match kind {
-        BinaryConditionKind::GreaterThanEqual => match (a, b) {
+        BinaryKind::GreaterThanEqual => match (a, b) {
             (Value::U8(a), Value::U8(b)) => Ok(Value::Bool(a >= b)),
             _ => todo!(),
         },
-        BinaryConditionKind::NotEqual => match (a, b) {
+        BinaryKind::NotEqual => match (a, b) {
             (Value::String(a), Value::String(b)) => Ok(Value::Bool(a != b)),
             (Value::String(_), _) => Ok(Value::Bool(false)),
             (Value::Null, Value::Null) => Ok(Value::Bool(true)),
             (a, b) => todo!("{a:?} {b:?}"),
         },
-        BinaryConditionKind::Equal => match (a, b) {
+        BinaryKind::Equal => match (a, b) {
             (Value::String(a), Value::String(b)) => Ok(Value::Bool(a == b)),
             (a, b) => todo!("{a:?} {b:?}"),
         },

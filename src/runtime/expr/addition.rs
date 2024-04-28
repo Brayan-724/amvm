@@ -1,6 +1,7 @@
-use crate::{AmvmScope, AmvmTypeCasting, CommandExpression, Value};
-
-use crate::runtime::{expr, AmvmResult};
+use crate::{
+    runtime::{expr, AmvmResult},
+    tokens::{AmvmScope, AmvmTypeCasting, CommandExpression, Value},
+};
 
 pub fn eval(scope: &mut AmvmScope, a: &CommandExpression, b: &CommandExpression) -> AmvmResult {
     let binding = expr::eval(scope, a)?.as_value();

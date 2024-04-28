@@ -1,4 +1,7 @@
-use crate::{parser, Parser, ParserResult, Value};
+use crate::{
+    parser::{self, Parser, ParserResult},
+    tokens::Value,
+};
 
 pub struct Aml3Value;
 
@@ -8,7 +11,7 @@ impl Aml3Value {
             .map_err(Parser::map_nom_err)
             .expect("This is verified by the visit root");
 
-        let str = first.to_string();
+        let mut str = first.to_string();
 
         let mut parser = parser;
         loop {
@@ -43,7 +46,15 @@ impl Aml3Value {
                         )),
                     };
                 }
-                _ => todo!("{b:?}"),
+                '0'..='9' => {
+                    str.push(b);
+                }
+                _ => {
+                    return Err(_parser.error(
+                        parser::VerboseErrorKind::Context("Expected number type"),
+                        true,
+                    ))
+                }
             }
         }
     }

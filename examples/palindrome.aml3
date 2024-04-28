@@ -5,12 +5,12 @@
 
 @loop {
   @if >= $left $right {
-    @break
+    @break 
   }
 
   @if != . $word $left . $word $right {
     =$is_palindrome false
-    @break
+    @break 
   }
 
   =$left + $left 1u8

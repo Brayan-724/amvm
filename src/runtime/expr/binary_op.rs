@@ -1,6 +1,9 @@
-use crate::runtime::AmvmResult;
-use crate::{AmvmScope, CommandExpression, Value};
+use crate::{
+    runtime::AmvmResult,
+    tokens::{AmvmScope, CommandExpression, Value},
+};
 
+#[allow(unused)]
 pub enum BinaryOpKind {
     Sub,
     Mult,

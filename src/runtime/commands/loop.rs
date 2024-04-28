@@ -1,5 +1,7 @@
-use crate::runtime::AmvmResult;
-use crate::{AmvmScope, Command, Value};
+use crate::{
+    runtime::AmvmResult,
+    tokens::{AmvmScope, Command, Value},
+};
 
 pub fn eval(scope: &mut AmvmScope, body: &Vec<Command>) -> AmvmResult {
     'l: loop {

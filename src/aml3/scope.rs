@@ -1,4 +1,7 @@
-use crate::{parser, Command, Parser, ParserResult};
+use crate::{
+    parser::{self, Parser, ParserResult},
+    tokens::Command,
+};
 
 use super::Aml3Command;
 
@@ -31,6 +34,16 @@ impl Aml3Scope {
                 if let Some((_parser, _)) = value {
                     parser = _parser;
                     break;
+                }
+            }
+
+            {
+                let value = parser::char::<_, ()>(';')(parser).ok();
+                if let Some((_parser, _)) = value {
+                    let (_parser, _) =
+                        parser::take_while(|i: char| !(i == '\n' || i == '\r'))(_parser)?;
+                    parser = _parser;
+                    continue;
                 }
             }
 

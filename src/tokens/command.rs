@@ -1,54 +1,92 @@
-use crate::parser::ParserResult;
-use crate::{
-    parser, CommandExpression, Compilable, Parser, Value, VariableKind, COMMAND_SEPARATOR, VAR_MUT,
-    VAR_VAR,
-};
-use crate::{VAR_CONST, VAR_LET};
 use std::fmt;
 
-use super::AmvmType;
+use crate::{
+    create_bytes,
+    parser::{self, Parser, ParserResult},
+    tokens::{
+        AmvmType, CommandExpression, Value, VariableKind, COMMAND_SEPARATOR, VAR_CONST, VAR_LET,
+        VAR_MUT, VAR_VAR,
+    },
+    Compilable,
+};
 
-pub static CMD_DCLR_VAR: char = '\x51';
-pub static CMD_ASGN_VAR: char = '\x52';
-pub static CMD_PUTS: char = '\x53';
-pub static CMD_EVAL: char = '\x54';
-pub static CMD_SCOPE: char = '\x55';
-pub static CMD_LOOP: char = '\x56';
-pub static CMD_COND: char = '\x57';
-pub static CMD_BREAK: char = '\x58';
-pub static CMD_BUILTIN: char = '\x59';
-pub static CMD_STRUCT: char = '\x5A';
+create_bytes! {0x50;
+    CMD_ASGN_VAR,
+    CMD_BREAK,
+    CMD_BUILTIN,
+    CMD_CALL,
+    CMD_COND,
+    CMD_DCLR_VAR,
+    CMD_EVAL,
+    CMD_FN,
+    CMD_FOR,
+    CMD_LOOP,
+    CMD_PUTS,
+    CMD_RET,
+    CMD_SCOPE,
+    CMD_STRUCT
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     AssignVariable {
-        name: String,
+        name: Box<str>,
         value: CommandExpression,
     },
+
     Break,
+
     Builtin {
-        name: String,
+        name: Box<str>,
         args: Vec<CommandExpression>,
     },
+
+    Call {
+        name: CommandExpression,
+        args: Vec<CommandExpression>,
+    },
+
     Conditional {
         condition: CommandExpression,
         body: Vec<Command>,
         otherwise: Option<Vec<Command>>,
     },
+
     DeclareVariable {
+        name: Box<str>,
         kind: VariableKind,
-        name: String,
         value: CommandExpression,
     },
+
     Evaluate {
         expr: CommandExpression,
     },
+
+    For {
+        var: Box<str>,
+        iterator: CommandExpression,
+        body: Vec<Command>,
+    },
+
+    Function {
+        name: Box<str>,
+        args: Vec<(Box<str>, AmvmType)>,
+        ret: AmvmType,
+        body: Vec<Command>,
+    },
+
     Loop {
         body: Vec<Command>,
     },
+
     Puts {
         value: CommandExpression,
     },
+
+    Return {
+        value: CommandExpression,
+    },
+
     Scope {
         body: Vec<Command>,
     },
@@ -60,27 +98,17 @@ pub enum Command {
 }
 
 impl Command {
-    pub fn get_kind(&self) -> char {
-        match self {
-            Self::AssignVariable { .. } => CMD_ASGN_VAR,
-            Self::Break { .. } => CMD_BREAK,
-            Self::Builtin { .. } => CMD_BUILTIN,
-            Self::Conditional { .. } => CMD_COND,
-            Self::DeclareVariable { .. } => CMD_DCLR_VAR,
-            Self::Evaluate { .. } => CMD_EVAL,
-            Self::Loop { .. } => CMD_LOOP,
-            Self::Puts { .. } => CMD_PUTS,
-            Self::Scope { .. } => CMD_SCOPE,
-            Self::Struct { .. } => CMD_STRUCT,
-        }
-    }
-
     pub fn visit_asgn<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
         let (parser, name) = Value::visit_string(parser)?;
-        let name = name.to_owned();
         let (parser, value) = CommandExpression::visit(parser)?;
 
-        Ok((parser, Command::AssignVariable { name, value }))
+        Ok((
+            parser,
+            Command::AssignVariable {
+                name: name.into(),
+                value,
+            },
+        ))
     }
 
     pub fn visit_var<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
@@ -102,10 +130,16 @@ impl Command {
         let parser = parser_;
 
         let (parser, name) = Value::visit_string(parser)?;
-        let name = name.to_owned();
         let (parser, value) = CommandExpression::visit(parser)?;
 
-        Ok((parser, Command::DeclareVariable { name, kind, value }))
+        Ok((
+            parser,
+            Command::DeclareVariable {
+                name: name.into(),
+                kind,
+                value,
+            },
+        ))
     }
 
     fn visit_scope<'a>(parser: Parser<'a>) -> ParserResult<'a, Vec<Self>> {
@@ -133,40 +167,54 @@ impl Command {
             .map_err(parser_.nom_err_with_context("Expected command kind"))?;
 
         let (parser, value) = match b {
-            _ if b == CMD_BREAK => (parser, Command::Break),
             _ if b == CMD_ASGN_VAR => Self::visit_asgn(parser)?,
-            _ if b == CMD_DCLR_VAR => Self::visit_var(parser)?,
-            _ if b == CMD_PUTS => {
-                let (parser, value) = CommandExpression::visit(parser)?;
-                (parser, Command::Puts { value })
-            }
-            _ if b == CMD_SCOPE => {
-                let (parser, body) = Self::visit_scope(parser)?;
-                (parser, Command::Scope { body })
-            }
-            _ if b == CMD_STRUCT => {
+
+            _ if b == CMD_BREAK => (parser, Command::Break),
+
+            _ if b == CMD_BUILTIN => {
                 let (parser, name) = Value::visit_string(parser)?;
-                let name = Box::from(name);
-                let (parser, fields_len) = parser::anychar(parser)
-                    .map_err(parser.nom_err_with_context("Expected fields length"))?;
+                let (parser, args_len) = parser::anychar(parser)
+                    .map_err(parser.nom_err_with_context("Can't get arguments length"))?;
+                let args_len = args_len as u8;
 
-                let fields_len = fields_len as u8;
-                let mut fields = Vec::with_capacity(fields_len as usize);
-
+                let mut args = vec![];
                 let mut parser = parser;
-                for _ in 0..fields_len {
-                    let (parser_, field) = Value::visit_string(parser)?;
-                    let (parser_, r#type) = AmvmType::visit(parser_)?;
+
+                for _ in 0..args_len {
+                    let (parser_, arg) = CommandExpression::visit(parser)?;
                     parser = parser_;
-                    fields.push((Box::from(field), r#type))
+
+                    args.push(arg);
                 }
 
-                (parser, Command::Struct { name, body: fields })
+                (
+                    parser,
+                    Command::Builtin {
+                        name: name.into(),
+                        args,
+                    },
+                )
             }
-            _ if b == CMD_LOOP => {
-                let (parser, body) = Self::visit_scope(parser)?;
-                (parser, Command::Loop { body })
+
+            _ if b == CMD_CALL => {
+                let (parser, name) = CommandExpression::visit(parser)?;
+                let (parser, args_len) = parser::anychar(parser)
+                    .map_err(parser.nom_err_with_context("Can't get arguments length"))?;
+                let args_len = args_len as u8;
+
+                let mut args = vec![];
+                let mut parser = parser;
+
+                for _ in 0..args_len {
+                    let (parser_, arg) = CommandExpression::visit(parser)?;
+                    parser = parser_;
+
+                    args.push(arg);
+                }
+
+                (parser, Command::Call { name, args })
             }
+
             _ if b == CMD_COND => {
                 let (parser, condition) = CommandExpression::visit(parser)?;
                 let (parser, body) = Self::visit_scope(parser)?;
@@ -187,9 +235,13 @@ impl Command {
                     },
                 )
             }
-            _ if b == CMD_BUILTIN => {
+
+            _ if b == CMD_DCLR_VAR => Self::visit_var(parser)?,
+
+            _ if b == CMD_FN => {
                 let (parser, name) = Value::visit_string(parser)?;
-                let name = name.to_owned();
+                let name: Box<str> = name.into();
+
                 let (parser, args_len) = parser::anychar(parser)
                     .map_err(parser.nom_err_with_context("Can't get arguments length"))?;
                 let args_len = args_len as u8;
@@ -198,14 +250,82 @@ impl Command {
                 let mut parser = parser;
 
                 for _ in 0..args_len {
-                    let (parser_, arg) = CommandExpression::visit(parser)?;
+                    let (parser_, name) = Value::visit_string(parser)?;
+                    let (parser_, ty) = AmvmType::visit(parser_)?;
                     parser = parser_;
 
-                    args.push(arg);
+                    args.push((Box::from(name), ty));
                 }
 
-                (parser, Command::Builtin { name, args })
+                let (parser, ret) = AmvmType::visit(parser)?;
+                let (parser, body) = Self::visit_scope(parser)?;
+
+                (
+                    parser,
+                    Command::Function {
+                        name,
+                        args,
+                        ret,
+                        body,
+                    },
+                )
             }
+
+            _ if b == CMD_FOR => {
+                let (parser, var) = Value::visit_string(parser)?;
+                let (parser, iterator) = CommandExpression::visit(parser)?;
+                let (parser, body) = Self::visit_scope(parser)?;
+
+                (
+                    parser,
+                    Command::For {
+                        var: var.into(),
+                        iterator,
+                        body,
+                    },
+                )
+            }
+
+            _ if b == CMD_LOOP => {
+                let (parser, body) = Self::visit_scope(parser)?;
+                (parser, Command::Loop { body })
+            }
+
+            _ if b == CMD_PUTS => {
+                let (parser, value) = CommandExpression::visit(parser)?;
+                (parser, Command::Puts { value })
+            }
+
+            _ if b == CMD_RET => {
+                let (parser, value) = CommandExpression::visit(parser)?;
+                (parser, Command::Return { value })
+            }
+
+            _ if b == CMD_SCOPE => {
+                let (parser, body) = Self::visit_scope(parser)?;
+                (parser, Command::Scope { body })
+            }
+
+            _ if b == CMD_STRUCT => {
+                let (parser, name) = Value::visit_string(parser)?;
+                let name = Box::from(name);
+                let (parser, fields_len) = parser::anychar(parser)
+                    .map_err(parser.nom_err_with_context("Expected fields length"))?;
+
+                let fields_len = fields_len as u8;
+                let mut fields = Vec::with_capacity(fields_len as usize);
+
+                let mut parser = parser;
+                for _ in 0..fields_len {
+                    let (parser_, field) = Value::visit_string(parser)?;
+                    let (parser_, r#type) = AmvmType::visit(parser_)?;
+                    parser = parser_;
+                    fields.push((Box::from(field), r#type))
+                }
+
+                (parser, Command::Struct { name, body: fields })
+            }
+
             _ => {
                 return Err(parser_.error(
                     parser::VerboseErrorKind::Context("Unknown command kind"),
@@ -220,29 +340,26 @@ impl Command {
 impl Compilable for Command {
     fn compile_bytecode(&self) -> Box<str> {
         Box::from(match self {
-            Self::DeclareVariable { name, value, kind } => {
-                let kind = kind.compile_bytecode();
-                let name = Value::compile_string(name);
-                let value = value.compile_bytecode();
-
-                format!("{CMD_DCLR_VAR}{kind}{name}{value}")
-            }
             Self::AssignVariable { name, value } => {
                 let name = Value::compile_string(name);
                 let value = value.compile_bytecode();
                 format!("{CMD_ASGN_VAR}{name}{value}")
             }
-            Self::Puts { value } => {
-                let value = value.compile_bytecode();
-                format!("{CMD_PUTS}{value}")
+            Self::Break => CMD_BREAK.to_string(),
+            Self::Builtin { name, args } => {
+                let name = name.compile_bytecode();
+
+                let args_len = args.len() as u8 as char;
+                let args: String = args.iter().map(|v| v.compile_bytecode()).collect();
+
+                format!("{CMD_BUILTIN}{name}{args_len}{args}")
             }
-            Self::Scope { body } => {
-                let value = body.compile_bytecode();
-                format!("{CMD_SCOPE}{value}{COMMAND_SEPARATOR}")
-            }
-            Self::Loop { body } => {
-                let value = body.compile_bytecode();
-                format!("{CMD_LOOP}{value}{COMMAND_SEPARATOR}")
+            Self::Call { name, args } => {
+                let name = name.compile_bytecode();
+                let args_len = args.len() as u8 as char;
+                let args: String = args.iter().map(|v| v.compile_bytecode()).collect();
+
+                format!("{CMD_CALL}{name}{args_len}{args}")
             }
             Self::Conditional {
                 condition,
@@ -260,14 +377,62 @@ impl Compilable for Command {
 
                 format!("{CMD_COND}{condition}{body}{COMMAND_SEPARATOR}{otherwise}")
             }
-            Self::Break => CMD_BREAK.to_string(),
-            Self::Builtin { name, args } => {
-                let name = Value::compile_string(name);
+            Self::DeclareVariable { name, value, kind } => {
+                let kind = kind.compile_bytecode();
+                let name = name.compile_bytecode();
+                let value = value.compile_bytecode();
 
+                format!("{CMD_DCLR_VAR}{kind}{name}{value}")
+            }
+            Self::For {
+                var,
+                iterator,
+                body,
+            } => {
+                let var = var.compile_bytecode();
+                let iterator = iterator.compile_bytecode();
+                let body = body.compile_bytecode();
+
+                format!("{CMD_FOR}{var}{iterator}{body}{COMMAND_SEPARATOR}")
+            }
+            Self::Function {
+                name,
+                args,
+                ret,
+                body,
+            } => {
+                let name = name.compile_bytecode();
                 let args_len = args.len() as u8 as char;
-                let args: String = args.iter().map(|v| v.compile_bytecode()).collect();
+                let args: String = args
+                    .iter()
+                    .map(|v| {
+                        format!(
+                            "{v}{ty}",
+                            v = v.0.compile_bytecode(),
+                            ty = v.1.compile_bytecode(),
+                        )
+                    })
+                    .collect();
+                let ret = ret.compile_bytecode();
+                let body = body.compile_bytecode();
 
-                format!("{CMD_BUILTIN}{name}{args_len}{args}")
+                format!("{CMD_FN}{name}{args_len}{args}{ret}{body}{COMMAND_SEPARATOR}")
+            }
+            Self::Loop { body } => {
+                let value = body.compile_bytecode();
+                format!("{CMD_LOOP}{value}{COMMAND_SEPARATOR}")
+            }
+            Self::Puts { value } => {
+                let value = value.compile_bytecode();
+                format!("{CMD_PUTS}{value}")
+            }
+            Self::Return { value } => {
+                let value = value.compile_bytecode();
+                format!("{CMD_RET}{value}")
+            }
+            Self::Scope { body } => {
+                let value = body.compile_bytecode();
+                format!("{CMD_SCOPE}{value}{COMMAND_SEPARATOR}")
             }
             Self::Struct { name, body } => format!(
                 "{CMD_STRUCT}{}{}",
@@ -303,29 +468,20 @@ pub fn fmt_body(f: &mut fmt::Formatter, body: &Vec<Command>) -> fmt::Result {
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Break => f.write_str(": Break"),
-            Self::Builtin { name, args } => {
-                f.write_fmt(format_args!(": Builtin({name}, {args:#?})"))
-            }
             Self::AssignVariable { name, value } => {
                 f.write_fmt(format_args!(": AssignVariable({name}, {value})"))
             }
-            Self::DeclareVariable { name, value, kind } => {
-                f.write_fmt(format_args!(": DeclareVariable({kind}, {name}, {value})"))
-            }
-            Self::Evaluate { expr } => f.write_fmt(format_args!(": Evaluate({expr})")),
-            Self::Puts { value } => f.write_fmt(format_args!(": Puts({value})")),
-            Self::Scope { body } => {
-                f.write_str(": Scope:\n")?;
 
-                fmt_body(f, body)
-            }
-            Self::Struct { name, body } => f.write_fmt(format_args!(": Struct {name} {body:#?}")),
-            Self::Loop { body } => {
-                f.write_str(": Loop:\n")?;
+            Self::Break => f.write_str(": Break"),
 
-                fmt_body(f, body)
+            Self::Builtin { name, args } => {
+                f.write_fmt(format_args!(": Builtin({name}, {args:#?})"))
             }
+
+            Self::Call { name, args } => {
+                write!(f, ": Call({name}, {args:#?})")
+            }
+
             Self::Conditional {
                 condition,
                 body,
@@ -342,6 +498,50 @@ impl fmt::Display for Command {
 
                 Ok(())
             }
+
+            Self::DeclareVariable { name, value, kind } => {
+                f.write_fmt(format_args!(": DeclareVariable({kind}, {name}, {value})"))
+            }
+
+            Self::Evaluate { expr } => f.write_fmt(format_args!(": Evaluate({expr})")),
+
+            Self::For {
+                var,
+                iterator,
+                body,
+            } => {
+                write!(f, ": For({var} in {iterator})\n")?;
+
+                fmt_body(f, body)
+            }
+
+            Self::Function {
+                name,
+                args: _,
+                ret,
+                body,
+            } => {
+                write!(f, ": Function {name}(...) {ret}\n")?;
+
+                fmt_body(f, body)
+            }
+
+            Self::Loop { body } => {
+                f.write_str(": Loop:\n")?;
+
+                fmt_body(f, body)
+            }
+
+            Self::Puts { value } => f.write_fmt(format_args!(": Puts({value})")),
+
+            Self::Return { value } => f.write_fmt(format_args!(": Return {value}")),
+
+            Self::Scope { body } => {
+                f.write_str(": Scope:\n")?;
+
+                fmt_body(f, body)
+            }
+            Self::Struct { name, body } => f.write_fmt(format_args!(": Struct {name} {body:#?}")),
         }
     }
 }
