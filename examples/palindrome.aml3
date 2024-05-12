@@ -1,7 +1,7 @@
 @declare $word "ana"
-@declare mut $left 0u8
-@declare mut $right - . $word "length" 1u8
-@declare mut $is_palindrome true
+@declare let $left 0u8
+@declare let $right - . $word "length" 1u8
+@declare let $is_palindrome true
 
 @loop {
   @if >= $left $right {

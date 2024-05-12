@@ -7,12 +7,12 @@
 @builtin .vm.create
 @declare mut $ctx _
 
-@puts + "Initial:" + $ctx '\n
+@puts + "Initial: " + $ctx '\n
 
 @builtin .io.stdout.flush
 
 @loop {
-  @puts + '> ' 
+  @puts "> "
   @builtin .io.stdout.flush
   @builtin .io.stdin.read_line $input
 

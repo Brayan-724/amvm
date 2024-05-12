@@ -1,7 +1,7 @@
 use crate::{
     aml3::{Aml3Struct, Aml3Type, Aml3Value, Aml3Variable},
     parser::{self, Parser, ParserResult},
-    tokens::{BinaryKind, CommandExpression},
+    tokens::{BinaryKind, CommandExpression, VariableKind},
 };
 
 pub struct Aml3Expr;
@@ -57,6 +57,27 @@ impl Aml3Expr {
             '$' => {
                 let (parser, var) = Aml3Variable::visit(parser)?;
                 Ok((parser, CommandExpression::Var(var.to_owned())))
+            }
+
+            '&' => {
+                let (parser, kind) = if consumed_parser.peek(0) == Some(' ') {
+                    (consumed_parser, VariableKind::Const)
+                } else {
+                    let (parser, kind) =
+                        parser::needs_space(parser::take_until_space)(consumed_parser)?;
+                    let kind = kind.value;
+                    let kind = VariableKind::from_str(kind).ok_or_else(|| {
+                        consumed_parser.error(
+                            parser::VerboseErrorKind::Context("Unknown reference kind"),
+                            true,
+                        )
+                    })?;
+
+                    (parser, kind)
+                };
+                let (parser, var) = Aml3Expr::visit(parser)?;
+
+                Ok((parser, CommandExpression::Ref(kind, var.into())))
             }
 
             '_' => Ok((consumed_parser, CommandExpression::Prev)),

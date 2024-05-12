@@ -1,5 +1,5 @@
 use crate::{
-    runtime::{expr, AmvmError, AmvmPropagate, AmvmResult},
+    runtime::{expr, AmvmPropagate, AmvmResult},
     tokens::{AmvmScope, CommandExpression, Value, ValueObject},
 };
 
@@ -13,6 +13,10 @@ pub fn eval(
     let property = expr::eval(scope, property)?.as_value();
     let property = property.as_ref();
 
+    get(scope, var, property)
+}
+
+pub fn get(scope: &mut AmvmScope, var: &Value, property: &Value) -> AmvmResult {
     match var {
         Value::String(var) => match property {
             Value::String(prop) => match &prop as &str {
@@ -27,17 +31,14 @@ pub fn eval(
         },
         Value::Object(value) => match value {
             ValueObject::Native(_) => todo!("Can't get properties of native object"),
-            ValueObject::Instance(_, map) => match property {
-                Value::String(name) => Ok(map.get(name).cloned().unwrap_or(Value::Null)),
-                _ => Err(AmvmPropagate::Err(AmvmError::Other(
-                    "Objects only can be accessed by a string",
-                ))),
-            },
-            ValueObject::PropertyMap(map) => match property {
-                Value::String(name) => Ok(map.get(name).cloned().unwrap_or(Value::Null)),
-                _ => Err(AmvmPropagate::Err(AmvmError::Other(
-                    "Objects only can be accessed by a string",
-                ))),
+            ValueObject::Instance(_, map) | ValueObject::PropertyMap(map) => match property {
+                Value::String(name) => Ok(map
+                    .get(name)
+                    .map(|p| p.read().unwrap().clone())
+                    .unwrap_or(Value::Null)),
+                _ => Err(AmvmPropagate::Err(
+                    scope.error("Objects only can be accessed by a string"),
+                )),
             },
         },
         _ => todo!(),

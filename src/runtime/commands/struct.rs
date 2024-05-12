@@ -3,16 +3,15 @@ use crate::{
     tokens::{AmvmScope, AmvmType, AmvmTypeDefinition, Value},
 };
 
-pub fn eval(
-    scope: &mut AmvmScope,
-    name: &Box<str>,
-    body: &Vec<(Box<str>, AmvmType)>,
-) -> AmvmResult {
-    let declaration = AmvmTypeDefinition::Struct(body.clone());
+pub fn eval(scope: &mut AmvmScope, name: &str, body: &Vec<(Box<str>, AmvmType)>) -> AmvmResult {
+    let declaration = AmvmTypeDefinition::Struct {
+        generics: vec![],
+        fields: body.clone(),
+    };
 
     scope
         .context
-        .write()
+        .lock()
         .unwrap()
         .structs
         .insert(name.to_string(), declaration);

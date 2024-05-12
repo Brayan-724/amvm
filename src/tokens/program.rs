@@ -1,5 +1,8 @@
+use std::fmt::Write;
+
+use crate::CompileResult;
 use crate::{
-    parser::{self, Parser, ParserResult, CMD_VERBOSE},
+    parser::{self, Parser, ParserResult},
     runtime::Runtime,
     tokens::{AmvmHeader, Command},
     Compilable,
@@ -18,10 +21,10 @@ impl Program {
         }
     }
 
-    pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
+    pub fn visit(parser: Parser<'_>) -> ParserResult<'_, Self> {
         let (parser, header) = AmvmHeader::visit(parser)?;
 
-        let (_, parser) = parser::take(1usize)(parser)?;
+        let (parser, _) = parser::anychar(parser)?;
         let parser = parser.new_line();
 
         let mut cmds = vec![];
@@ -36,13 +39,13 @@ impl Program {
             parser = _parser;
             parser = parser.new_line();
 
-            if CMD_VERBOSE {
+            if std::env::var("CMD_VERBOSE").is_ok() {
                 let ib = format!("\x1b[32m{at:03x}\x1b[0m");
                 let cmd = format!("{cmd}");
-                let mut cmd = cmd
-                    .split('\n')
-                    .map(|c| format!("{ib}{c}\n"))
-                    .collect::<String>();
+                let mut cmd = cmd.split('\n').fold(String::new(), |mut buffer, c| {
+                    let _ = writeln!(buffer, "{ib}{c}");
+                    buffer
+                });
 
                 cmd.pop();
 
@@ -55,17 +58,16 @@ impl Program {
         Ok((parser, Self::new(header, cmds)))
     }
 
-    pub fn runtime(self) -> Runtime {
-        Runtime::new(self.header, self.body)
+    pub fn runtime(self, filename: Box<str>) -> Runtime {
+        Runtime::new(filename, self.header, self.body)
     }
 }
 
 impl Compilable for Program {
-    fn compile_bytecode(&self) -> Box<str> {
-        Box::from(format!(
-            "{header}{body}",
-            header = self.header.compile_bytecode(),
-            body = self.body.compile_bytecode()
-        ))
+    fn compile_bytecode(&self, mut buffer: String) -> CompileResult {
+        buffer = self.header.compile_bytecode(buffer)?;
+        buffer = self.body.compile_bytecode(buffer)?;
+
+        Ok(buffer)
     }
 }

@@ -12,7 +12,7 @@ pub fn eval(
     let condition = expr::eval(scope, condition)?.as_value();
     let Value::Bool(condition) = condition.as_ref() else {
         return Err(crate::runtime::AmvmPropagate::Err(
-            crate::runtime::AmvmError::Other("Condition should be boolean"),
+            scope.error("Condition should be boolean"),
         ));
     };
 

@@ -1,6 +1,6 @@
 mod command;
 pub use command::Command;
-pub use command::{CMD_ASGN_VAR, CMD_DCLR_VAR, CMD_EVAL, CMD_PUTS, CMD_SCOPE};
+pub use command::{CMD_ASGN_VAR, CMD_DCLR_VAR, CMD_PUTS, CMD_SCOPE};
 
 mod expr;
 pub use expr::{BinaryKind, CommandExpression};
@@ -13,10 +13,10 @@ mod program;
 pub use program::Program;
 
 mod scope;
-pub use scope::AmvmScope;
+pub use scope::{AmvmMeta, AmvmScope};
 
 mod r#type;
-pub use r#type::{AmvmType, AmvmTypeDefinition};
+pub use r#type::{AmvmPrimitiveType, AmvmType, AmvmTypeDefinition};
 pub use r#type::{TYPE_ANON, TYPE_CUSTOM, TYPE_STRING, TYPE_TUPLE, TYPE_U8, TYPE_UNION};
 
 mod value;
@@ -40,7 +40,7 @@ macro_rules! create_bytes {
         create_bytes! {$prev; $($tail)*}
     };
     ($prev:expr; $name:ident $(, $($tail:tt)*)?) => {
-        pub static $name: char = ($prev + 1u8) as char;
+        pub const $name: char = ($prev + 1u8) as char;
         $(create_bytes! {($prev + 1); $($tail)*})?
     };
 }
@@ -48,13 +48,35 @@ macro_rules! create_bytes {
 #[cfg(feature = "useron")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+use crate::Compilable;
+
+#[derive(Debug, Clone, PartialEq, Copy)]
 #[cfg_attr(feature = "useron", derive(Serialize, Deserialize))]
 pub enum VariableKind {
     Const,
     Mut,
     Let,
     Var,
+}
+
+impl std::cmp::PartialOrd for VariableKind {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Self::Const, Self::Const) => Some(std::cmp::Ordering::Equal),
+            (_, Self::Const) => Some(std::cmp::Ordering::Greater),
+            (Self::Const, _) => Some(std::cmp::Ordering::Less),
+
+            (Self::Let, Self::Let) => Some(std::cmp::Ordering::Equal),
+            (_, Self::Let) => Some(std::cmp::Ordering::Greater),
+            (Self::Let, _) => Some(std::cmp::Ordering::Less),
+
+            (Self::Mut, Self::Mut) => Some(std::cmp::Ordering::Equal),
+            (_, Self::Mut) => Some(std::cmp::Ordering::Greater),
+            (Self::Mut, _) => Some(std::cmp::Ordering::Less),
+
+            (Self::Var, Self::Var) => Some(std::cmp::Ordering::Equal),
+        }
+    }
 }
 
 impl std::fmt::Display for VariableKind {
@@ -78,12 +100,19 @@ impl VariableKind {
             _ => None,
         }
     }
-    pub fn compile_bytecode(&self) -> char {
-        match self {
+}
+
+impl Compilable for VariableKind {
+    fn compile_bytecode(&self, mut buffer: String) -> crate::CompileResult {
+        use std::fmt::Write;
+
+        _ = buffer.write_char(match self {
             VariableKind::Const => VAR_CONST,
             VariableKind::Mut => VAR_MUT,
             VariableKind::Let => VAR_LET,
             VariableKind::Var => VAR_VAR,
-        }
+        });
+
+        Ok(buffer)
     }
 }

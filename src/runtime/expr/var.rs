@@ -4,5 +4,5 @@ use crate::{
 };
 
 pub fn eval(scope: &mut AmvmScope, var: &String) -> Result<AmvmVariable, AmvmPropagate> {
-    Ok(scope.context.read().unwrap().get_variable(var).clone())
+    Ok(scope.context.lock().unwrap().get_variable(var).clone())
 }

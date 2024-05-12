@@ -6,7 +6,7 @@ use crate::{
 pub struct Aml3Value;
 
 impl Aml3Value {
-    fn visit_number<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
+    fn visit_number(parser: Parser<'_>) -> ParserResult<'_, Value> {
         let (parser, first) = parser::anychar(parser)
             .map_err(Parser::map_nom_err)
             .expect("This is verified by the visit root");
@@ -59,7 +59,7 @@ impl Aml3Value {
         }
     }
 
-    fn visit_char<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
+    fn visit_char(parser: Parser<'_>) -> ParserResult<'_, Value> {
         let (parser, _) = parser::anychar(parser)
             .map_err(Parser::map_nom_err)
             .expect("Already verified");
@@ -103,7 +103,7 @@ impl Aml3Value {
         Ok((parser, Value::Char(c)))
     }
 
-    fn visit_string<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
+    fn visit_string(parser: Parser<'_>) -> ParserResult<'_, Value> {
         let (parser, _) = parser::anychar(parser)
             .map_err(Parser::map_nom_err)
             .expect("Already verified");
@@ -145,7 +145,7 @@ impl Aml3Value {
         Ok((parser, Value::String(str)))
     }
 
-    fn visit_bool<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
+    fn visit_bool(parser: Parser<'_>) -> ParserResult<'_, Value> {
         let (parser, value) = parser::take_until_space(parser)
             .map_err(parser.nom_err_with_context("Unexpected EOF"))?;
 
@@ -160,13 +160,13 @@ impl Aml3Value {
         }
     }
 
-    pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, Value> {
+    pub fn visit(parser: Parser<'_>) -> ParserResult<'_, Value> {
         let first = parser.peek(0).ok_or_else(|| {
             parser.error(parser::VerboseErrorKind::Context("Unexpected EOF"), false)
         })?;
 
         match first {
-            b if b.is_digit(10) => Self::visit_number(parser),
+            b if b.is_ascii_digit() => Self::visit_number(parser),
             '"' => Self::visit_string(parser),
             '\'' => Self::visit_char(parser),
 

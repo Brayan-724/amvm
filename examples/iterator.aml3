@@ -1,0 +1,27 @@
+@struct #Iterator {
+  val #u8
+  next #fn
+}
+
+@struct #IteratorResult {
+  done #bool
+  value #u8
+}
+
+@fn #IteratorResult $next $self mut #Iterator {
+  @if >= . $self "val" 10u8 {
+    @ret #IteratorResult { done true }
+  }
+
+  @builtin .obj.mut_access $self "val"
+  @declare $val &mut _
+  @builtin .mem.replace &mut $val + $val 1u8
+  @ret #IteratorResult { value $val done false }
+}
+
+@declare mut $iterator #Iterator { val 0u8 next $next }
+
+@for $v $iterator {
+  @puts + + "Iteration: " $v '\n
+}
+

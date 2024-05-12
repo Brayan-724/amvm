@@ -3,9 +3,9 @@ use crate::{
     tokens::{AmvmScope, Command, Value},
 };
 
-pub fn eval(scope: &mut AmvmScope, body: &Vec<Command>, use_same: bool) -> AmvmResult {
+pub fn eval(scope: &mut AmvmScope, body: &[Command], use_same: bool) -> AmvmResult {
     if use_same {
-        for cmd in body.clone().iter() {
+        for cmd in body {
             commands::eval(scope, cmd)?;
         }
     } else {

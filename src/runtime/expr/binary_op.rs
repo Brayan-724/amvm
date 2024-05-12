@@ -21,6 +21,10 @@ pub fn eval(
     let binding = super::eval(scope, b)?.as_value();
     let b = binding.as_ref();
 
+    eval_post(scope, kind, a, b)
+}
+
+pub fn eval_post(_: &mut AmvmScope, kind: BinaryOpKind, a: &Value, b: &Value) -> AmvmResult {
     macro_rules! impl_ops {
         ($a:ident, $b:ident) => {
             match kind {

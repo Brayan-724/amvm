@@ -1,59 +1,80 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use crate::runtime::AmvmVariable;
+use crate::tokens::{Command, VariableKind};
 use crate::{
-    runtime::{expr, scope, AmvmError, AmvmPropagate, AmvmResult},
+    runtime::{expr, scope, AmvmPropagate, AmvmResult},
     tokens::{AmvmScope, CommandExpression, Value, ValueFun},
 };
 
 pub fn eval(
     scope: &mut AmvmScope,
     name: &CommandExpression,
-    args: &Vec<CommandExpression>,
+    args: &[CommandExpression],
 ) -> AmvmResult {
     let name = expr::eval(scope, name)?;
     let name = name.as_value();
-    let Some(name) = name.as_string() else {
-        return Err(AmvmPropagate::Err(AmvmError::Other(
-            "Function name should be string",
-        )));
+    let Some(fun) = name.as_function() else {
+        return Err(AmvmPropagate::Err(scope.error("Calling to a non-function")));
     };
 
-    let fun = scope
-        .context
-        .read()
-        .unwrap()
-        .get_variable(&name.to_string());
+    let mut args_evaluated = Vec::with_capacity(args.len());
 
-    let fun = fun.read();
-    let fun = fun.as_ref();
-    let fun = match fun {
-        Value::Fun(ref fun) => fun,
-        _ => {
-            return Err(AmvmPropagate::Err(AmvmError::Other(
-                "Calling to non-function",
-            )))
+    for arg in args {
+        args_evaluated.push(expr::eval(scope, arg)?.as_ref());
+    }
+
+    let value = call(scope, fun, &args_evaluated)?;
+
+    scope.context.lock().unwrap().push_prev_value(value);
+
+    Ok(Value::Null)
+}
+
+enum Either<'a> {
+    Native(Rc<RefCell<dyn FnMut(&mut AmvmScope) -> AmvmResult>>),
+    Body(&'a Vec<Command>),
+}
+
+pub fn call(scope: &mut AmvmScope, fun: &ValueFun, args: &[AmvmVariable]) -> AmvmResult {
+    let (named_args, body, mut inner) = match fun {
+        ValueFun::Native(a, _, b) => (a, Either::Native(b.clone()), scope.create_sub(vec![])),
+        ValueFun::Const(a, _, b) | ValueFun::Mutable(a, _, b) => {
+            (a, Either::Body(b), scope.create_sub(b.to_vec()))
         }
     };
 
-    let (named_args, body) = match fun {
-        ValueFun::Const(a, _, b) => (a, b),
-        ValueFun::Mutable(a, _, b) => (a, b),
-    };
+    let inner = &mut inner;
 
-    let inner = &mut scope.create_sub(body.to_vec());
-
-    for (value, (name, _)) in args.iter().zip(named_args) {
+    for (value, (name, arg_kind, _)) in args.iter().zip(named_args) {
         let name = name.to_string();
-        let value = expr::eval(scope, value)?.as_ref();
+        let value_kind = value.get_kind();
 
-        inner.context.write().unwrap().variables.insert(name, value);
+        assert!(
+            *arg_kind <= value_kind,
+            "Cannot cast {value_kind} to {arg_kind}"
+        );
+
+        let arg = if *arg_kind == VariableKind::Const {
+            AmvmVariable::new(VariableKind::Const, (*value.read()).clone())
+        } else {
+            AmvmVariable::from_rw(*arg_kind, value.get_rw().1)
+        };
+
+        inner.context.lock().unwrap().variables.insert(name, arg);
     }
 
-    let value = match scope::eval(inner, body, true) {
-        Ok(v) => v,
-        Err(AmvmPropagate::Return(v)) => v,
-        Err(e) => return Err(e),
-    };
+    match body {
+        Either::Body(body) => {
+            let value = match scope::eval(inner, body, true) {
+                Ok(v) => v,
+                Err(AmvmPropagate::Return(v)) => v,
+                Err(e) => return Err(e),
+            };
 
-    scope.context.read().unwrap().set_prev_value(value);
-
-    Ok(Value::Null)
+            Ok(value)
+        }
+        Either::Native(ref fun) => (fun.borrow_mut())(inner),
+    }
 }

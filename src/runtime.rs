@@ -1,10 +1,12 @@
 use std::io::Write;
-use std::sync::RwLock;
+use std::rc::Rc;
+use std::sync::Mutex;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::tokens::{AmvmHeader, AmvmScope, AmvmTypeDefinition, Command, Value};
 
 mod commands;
+pub mod core;
 mod error;
 mod expr;
 mod result;
@@ -16,14 +18,22 @@ pub use expr::AmvmExprResult;
 pub use result::{AmvmPropagate, AmvmResult};
 pub use variable::AmvmVariable;
 
+const PREV_MAX: usize = u8::MAX as usize;
+
 #[derive(Debug, Clone)]
 pub struct Context {
     variables: HashMap<String, AmvmVariable>,
-    prev: Arc<RwLock<Option<AmvmExprResult>>>,
+    prev: Vec<AmvmExprResult>,
 
     structs: HashMap<String, AmvmTypeDefinition>,
 
-    parent: Option<Arc<RwLock<Context>>>,
+    parent: Option<Arc<Mutex<Context>>>,
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Context {
@@ -31,30 +41,30 @@ impl Context {
         Self {
             variables: Default::default(),
             structs: Default::default(),
-            prev: Arc::new(RwLock::new(None)),
+            prev: Vec::with_capacity(PREV_MAX),
             parent: None,
         }
     }
 
-    pub fn create_sub(this: Arc<RwLock<Context>>) -> Self {
+    pub fn create_sub(this: Arc<Mutex<Context>>) -> Self {
         Self {
             variables: Default::default(),
             structs: Default::default(),
-            prev: Arc::new(RwLock::new(None)),
+            prev: Vec::with_capacity(PREV_MAX),
             parent: Some(Arc::clone(&this)),
         }
     }
 
-    pub fn get_prev(&self) -> Option<AmvmExprResult> {
-        self.prev.write().unwrap().take()
+    pub fn pop_prev(&mut self) -> Option<AmvmExprResult> {
+        self.prev.pop()
     }
 
-    pub fn set_prev(&self, v: AmvmExprResult) {
-        *self.prev.write().unwrap() = Some(v);
+    pub fn push_prev(&mut self, v: AmvmExprResult) {
+        self.prev.push(v)
     }
 
-    pub fn set_prev_value(&self, v: Value) {
-        self.set_prev(AmvmExprResult::from(v))
+    pub fn push_prev_value(&mut self, v: Value) {
+        self.push_prev(AmvmExprResult::from(v))
     }
 
     pub fn get_variable(&self, name: &String) -> AmvmVariable {
@@ -64,7 +74,7 @@ impl Context {
             .or_else(|| {
                 self.parent
                     .as_ref()
-                    .map(|p| p.read().unwrap().get_variable(name))
+                    .map(|p| p.lock().unwrap().get_variable(name))
             })
             .unwrap_or_else(|| {
                 let _ = std::io::stdout().lock().flush();
@@ -85,13 +95,20 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    pub fn new(header: AmvmHeader, ast: Vec<Command>) -> Self {
+    pub fn new(filename: Box<str>, header: AmvmHeader, ast: Vec<Command>) -> Self {
         Self {
-            scope: AmvmScope::new(&Arc::new(header), ast, None),
+            scope: AmvmScope::new(filename, &Rc::new(header), ast, None),
         }
     }
 
+    fn registry_base_types(&self) {
+        let structs = &mut self.scope.context.lock().unwrap().structs;
+        structs.insert("Iterator".to_owned(), core::amvm_iterator_type());
+    }
+
     pub fn run(&mut self) -> AmvmResult {
+        self.registry_base_types();
+
         for cmd in self.scope.body.clone().iter() {
             commands::eval(&mut self.scope, cmd)?;
         }
@@ -103,7 +120,7 @@ impl Runtime {
 pub fn get_backtrace() -> String {
     let backtrace = format!("{}", std::backtrace::Backtrace::capture());
     backtrace
-        .split("\n")
+        .split('\n')
         .filter(|l| {
             !l.contains("at /rustc/")
                 && !l.contains(": std::")

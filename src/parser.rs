@@ -1,4 +1,5 @@
 use std::char;
+use std::fmt::Write;
 use std::ops::RangeFrom;
 use std::str::{CharIndices, Chars};
 
@@ -9,8 +10,6 @@ pub use nom::{
 };
 
 use nom::{FindToken, InputLength};
-
-pub(crate) const CMD_VERBOSE: bool = true;
 
 pub type ParserResult<'a, O, I = Parser<'a>, Err = VerboseError<I>> = IResult<I, O, Err>;
 
@@ -46,7 +45,7 @@ impl Parser<'_> {
                     .errors
                     .iter()
                     .map(|err| match err.1 {
-                        VerboseErrorKind::Nom(_) => (err.0.clone(), VerboseErrorKind::Context(ctx)),
+                        VerboseErrorKind::Nom(_) => (err.0, VerboseErrorKind::Context(ctx)),
                         _ => err.clone(),
                     })
                     .collect::<Vec<(Parser, VerboseErrorKind)>>(),
@@ -65,11 +64,14 @@ impl Parser<'_> {
                 .get(parser.line_byte_start..=pointer_position)
                 .unwrap_or(&parser.input[parser.line_byte_start..])
                 .as_bytes();
-            let code_line: String = code_line.iter().map(|v| format!("{v:02x} ")).collect();
+            let code_line: String = code_line.iter().fold(String::new(), |mut buffer, v| {
+                _ = write!(buffer, "{v:02x} ");
+                buffer
+            });
 
             let cursor_pad = " ".repeat(parser.column() * 3);
 
-            format!("{line} | {code_line}\n{line_pad} | {cursor_pad}^")
+            format!(" {line} | \x1b[0m{code_line}\n  \x1b[1;34m{line_pad} | {cursor_pad}^")
         } else {
             let line = (parser.line + 1).to_string();
             let line_pad = " ".repeat(line.len());
@@ -82,11 +84,11 @@ impl Parser<'_> {
 
             let cursor_pad = " ".repeat(parser.column());
 
-            format!("{line} | {code_line}\n{line_pad} | {cursor_pad}^")
+            format!("  {line} | \x1b[0m{code_line}\n  \x1b[1;34m{line_pad} | {cursor_pad}^")
         }
     }
 
-    fn map_verbose_err<'a>((parser, error): &(Parser<'a>, VerboseErrorKind)) -> String {
+    fn map_verbose_err((parser, error): &(Parser<'_>, VerboseErrorKind)) -> String {
         let is_bytecode = *parser.is_bytecode;
 
         let code_ctx = Self::get_code_ctx(parser);
@@ -94,15 +96,16 @@ impl Parser<'_> {
         let position = if is_bytecode {
             format!("byte 0x{:02x}", parser.pointer_position())
         } else {
-            format!("{:?}", parser.cursor_position())
+            let pos = parser.cursor_position();
+            format!("{}:{}", pos.0, pos.1)
         };
 
         let char_message = if is_bytecode { "Unknown" } else { "Expected" };
 
         match error {
-            VerboseErrorKind::Char(c) => format!("{char_message} '{c}' at {position}\n{code_ctx}"),
-            VerboseErrorKind::Context(ctx) => format!("{ctx} at {position}\n{code_ctx}"),
-            VerboseErrorKind::Nom(n) => format!("nom::{n:?} at {position}\n{code_ctx}"),
+            VerboseErrorKind::Char(c) => format!("\x1b[1;31merror: \x1b[0;1m{char_message} '{c}'\n  \x1b[1;34m--> {position}\n{code_ctx}\x1b[0m"),
+            VerboseErrorKind::Context(ctx) => format!("\x1b[1;31merror: \x1b[0;1m{ctx}\n  \x1b[1;34m--> {position}\n{code_ctx}\x1b[0m"),
+            VerboseErrorKind::Nom(n) => format!("\x1b[1;31merror: \x1b[0;1mnom::{n:?}\n  \x1b[1;34m--> {position}\n{code_ctx}\x1b[0m"),
         }
     }
 
@@ -156,7 +159,7 @@ impl<'a> Parser<'a> {
 
     pub fn error(&self, kind: VerboseErrorKind, is_failure: bool) -> Err<VerboseError<Self>> {
         let err = VerboseError {
-            errors: vec![(self.clone(), kind)],
+            errors: vec![(*self, kind)],
         };
 
         if is_failure {
@@ -170,7 +173,7 @@ impl<'a> Parser<'a> {
         &self,
         ctx: &'static str,
     ) -> impl Fn(Err<VerboseError<Self>>) -> Err<VerboseError<Self>> {
-        let this = self.clone();
+        let this = *self;
         move |err| {
             err.map(|err| {
                 let mut errors = err.errors;
@@ -348,7 +351,7 @@ impl<'a> InputTakeAtPosition for Parser<'a> {
         P: Fn(Self::Item) -> bool,
     {
         match self.value.find(predicate) {
-            Some(0) => Err(Err::Error(E::from_error_kind(self.clone(), e))),
+            Some(0) => Err(Err::Error(E::from_error_kind(*self, e))),
             // find() returns a byte index that is already in the slice at a char boundary
             Some(i) => unsafe {
                 Ok((
@@ -394,7 +397,7 @@ impl<'a> InputTakeAtPosition for Parser<'a> {
         P: Fn(Self::Item) -> bool,
     {
         match self.value.find(predicate) {
-            Some(0) => Err(Err::Error(E::from_error_kind(self.clone(), e))),
+            Some(0) => Err(Err::Error(E::from_error_kind(*self, e))),
             // find() returns a byte index that is already in the slice at a char boundary
             Some(i) => unsafe {
                 Ok((
@@ -404,7 +407,7 @@ impl<'a> InputTakeAtPosition for Parser<'a> {
             },
             None => {
                 if self.value.is_empty() {
-                    Err(Err::Error(E::from_error_kind(self.clone(), e)))
+                    Err(Err::Error(E::from_error_kind(*self, e)))
                 } else {
                     // the end of slice is a char boundary
                     unsafe {
@@ -435,7 +438,7 @@ impl<'a> FindSubstring<&str> for Parser<'a> {
 impl<'a> Offset for Parser<'a> {
     #[inline]
     fn offset(&self, second: &Self) -> usize {
-        Offset::offset(self.value, &second.value)
+        Offset::offset(self.value, second.value)
     }
 }
 

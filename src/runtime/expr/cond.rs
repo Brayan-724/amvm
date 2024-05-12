@@ -17,7 +17,21 @@ pub fn eval(
     match kind {
         BinaryKind::GreaterThanEqual => match (a, b) {
             (Value::U8(a), Value::U8(b)) => Ok(Value::Bool(a >= b)),
-            _ => todo!(),
+            (Value::I16(a), Value::I16(b)) => Ok(Value::Bool(a >= b)),
+            (Value::F32(a), Value::F32(b)) => Ok(Value::Bool(a >= b)),
+            (a, b) => todo!("{a:?} {b:?}"),
+        },
+        BinaryKind::LessThan => match (a, b) {
+            (Value::U8(a), Value::U8(b)) => Ok(Value::Bool(a < b)),
+            (Value::I16(a), Value::I16(b)) => Ok(Value::Bool(a < b)),
+            (Value::F32(a), Value::F32(b)) => Ok(Value::Bool(a < b)),
+            (a, b) => todo!("{a:?} {b:?}"),
+        },
+        BinaryKind::LessThanEqual => match (a, b) {
+            (Value::U8(a), Value::U8(b)) => Ok(Value::Bool(a <= b)),
+            (Value::I16(a), Value::I16(b)) => Ok(Value::Bool(a <= b)),
+            (Value::F32(a), Value::F32(b)) => Ok(Value::Bool(a <= b)),
+            (a, b) => todo!("{a:?} {b:?}"),
         },
         BinaryKind::NotEqual => match (a, b) {
             (Value::String(a), Value::String(b)) => Ok(Value::Bool(a != b)),
@@ -27,8 +41,9 @@ pub fn eval(
         },
         BinaryKind::Equal => match (a, b) {
             (Value::String(a), Value::String(b)) => Ok(Value::Bool(a == b)),
+            (Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(a == b)),
             (a, b) => todo!("{a:?} {b:?}"),
         },
-        _ => todo!(),
+        _ => todo!("{kind:?}"),
     }
 }

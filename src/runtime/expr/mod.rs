@@ -5,10 +5,10 @@ use crate::{
     tokens::{AmvmScope, BinaryKind, CommandExpression, Value, VariableKind},
 };
 
-mod addition;
-mod binary_op;
+pub mod addition;
+pub mod binary_op;
 mod cond;
-mod property;
+pub mod property;
 mod range;
 mod r#struct;
 mod value;
@@ -31,16 +31,25 @@ pub fn eval(
 
         CommandExpression::Prev => Ok(scope
             .context
-            .read()
+            .lock()
             .unwrap()
-            .get_prev()
+            .pop_prev()
             .expect("No prev value")),
 
         CommandExpression::Property(var, property) => {
             Ok(property::eval(scope, var, property)?.into())
         }
 
-        CommandExpression::Range(..) => Ok(range::eval(scope)?.into()),
+        CommandExpression::Range(from, to) => Ok(range::eval(scope, from, to)?.into()),
+        CommandExpression::Ref(_, var) => {
+            let var = eval(scope, var)?.as_ref();
+
+            Ok(match &*var.read() {
+                Value::Ref(v) => Value::Ref(v.clone()),
+                _ => Value::Ref(var),
+            }
+            .into())
+        }
 
         CommandExpression::Struct(name, body) => Ok(r#struct::eval(scope, name, body)?.into()),
         CommandExpression::Value(v) => Ok(value::eval(scope, v)?.into()),
@@ -68,16 +77,29 @@ impl From<AmvmVariable> for AmvmExprResult {
 
 impl AmvmExprResult {
     pub fn as_value(&self) -> Arc<Value> {
+        self.as_ref().read()
+    }
+
+    pub fn as_value_ref(&self) -> Arc<Value> {
         match self {
-            Self::Value(v) => v.clone(),
-            Self::Variable(v) => v.read().clone(),
+            Self::Value(v) => match &**v {
+                Value::Ref(_) => Arc::clone(v),
+                _ => Arc::clone(v),
+            },
+            Self::Variable(var) => var.read(),
         }
     }
 
     pub fn as_ref(&self) -> AmvmVariable {
         match self {
-            Self::Value(v) => AmvmVariable::new(VariableKind::Const, Arc::as_ref(v).clone()),
-            Self::Variable(v) => v.clone(),
+            Self::Value(v) => match &**v {
+                Value::Ref(var) => var.clone(),
+                _ => AmvmVariable::new(VariableKind::Const, Arc::as_ref(v).clone()),
+            },
+            Self::Variable(var) => match &*var.read() {
+                Value::Ref(v) => v.clone(),
+                _ => var.clone(),
+            },
         }
     }
 

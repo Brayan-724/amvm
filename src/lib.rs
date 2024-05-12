@@ -7,4 +7,4 @@ pub mod tokens;
 mod utils;
 
 pub use error::ParserError;
-pub use utils::Compilable;
+pub use utils::{Compilable, CompileResult};

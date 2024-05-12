@@ -7,8 +7,8 @@
 @puts $obj
 @puts '\n
 
-@puts "Name:"
+@puts "Name: "
 @puts . $obj "name"
-@puts "\nProp1:"
+@puts "\nProp1: "
 @puts . $obj "prop1"
 @puts '\n

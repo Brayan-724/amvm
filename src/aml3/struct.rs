@@ -9,7 +9,7 @@ use super::Aml3Type;
 pub struct Aml3Struct;
 
 impl Aml3Struct {
-    pub fn visit_decl_block<'a>(parser: Parser<'a>) -> ParserResult<'a, Vec<(&str, AmvmType)>> {
+    pub fn visit_decl_block(parser: Parser<'_>) -> ParserResult<'_, Vec<(&str, AmvmType)>> {
         let (parser, _) = parser::char('{')(parser)?;
 
         let mut properties = vec![];
@@ -55,9 +55,7 @@ impl Aml3Struct {
         Ok((parser, properties))
     }
 
-    pub fn visit_def_block<'a>(
-        parser: Parser<'a>,
-    ) -> ParserResult<'a, Vec<(&str, CommandExpression)>> {
+    pub fn visit_def_block(parser: Parser<'_>) -> ParserResult<'_, Vec<(&str, CommandExpression)>> {
         let (parser, _) = parser::char('{')(parser)?;
 
         let mut properties = vec![];

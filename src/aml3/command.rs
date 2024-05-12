@@ -1,3 +1,4 @@
+use crate::aml3::Aml3Meta;
 use crate::{
     aml3::{Aml3Expr, Aml3Scope, Aml3Struct, Aml3Type, Aml3Variable},
     parser::{self, Parser, ParserResult},
@@ -7,7 +8,7 @@ use crate::{
 pub struct Aml3Command;
 
 impl Aml3Command {
-    fn visit_args<'a>(mut parser: Parser<'a>) -> ParserResult<'a, Vec<CommandExpression>> {
+    fn visit_args(mut parser: Parser<'_>) -> ParserResult<'_, Vec<CommandExpression>> {
         let mut args = vec![];
 
         while !parser.is_eol() {
@@ -21,7 +22,7 @@ impl Aml3Command {
         Ok((parser, args))
     }
 
-    pub fn visit_conditional<'a>(parser: Parser<'a>) -> ParserResult<'a, Command> {
+    pub fn visit_conditional(parser: Parser<'_>) -> ParserResult<'_, Command> {
         let (parser, condition) = Aml3Expr::visit(parser)?;
         let (parser, _) = parser::char(' ')(parser)?;
         let (parser, body) = Aml3Scope::visit(parser, true)?;
@@ -61,7 +62,7 @@ impl Aml3Command {
         ))
     }
 
-    fn visit_command<'a>(parser__: Parser<'a>) -> ParserResult<'a, Command> {
+    fn visit_command(parser__: Parser<'_>) -> ParserResult<'_, Command> {
         let (parser_, cmd) = parser::take_until_space(parser__)
             .map_err(parser__.nom_err_with_context("Expected command"))?;
 
@@ -135,6 +136,12 @@ impl Aml3Command {
                 Ok((parser, Command::Puts { value }))
             }
 
+            "push" => {
+                let (parser, value) = Aml3Expr::visit(parser)?;
+
+                Ok((parser, Command::Push { value }))
+            }
+
             "struct" => {
                 let (parser, name) = parser::needs_space(Aml3Type::visit_name)(parser)?;
                 let (parser, def) = Aml3Struct::visit_decl_block(parser)?;
@@ -165,16 +172,34 @@ impl Aml3Command {
                             '$' => {
                                 tracing::trace!(arg_index = args.len());
 
-                                let (parser, name) = Aml3Variable::visit(parser)?;
+                                let (parser, name) =
+                                    parser::needs_space(Aml3Variable::visit)(parser)?;
                                 tracing::trace!(?name);
                                 let name: Box<str> = name.into();
 
-                                let (parser, _) = parser::char(' ')(parser)?;
+                                let (parser, kind) = if let Some('#') = parser.peek(0) {
+                                    (parser, VariableKind::Const)
+                                } else {
+                                    let (parser, kind) =
+                                        parser::needs_space(parser::take_until_space)(parser)?;
+                                    let kind = kind.value;
+                                    let kind = VariableKind::from_str(kind).ok_or_else(|| {
+                                        parser.error(
+                                            parser::VerboseErrorKind::Context(
+                                                "Unknown argument kind",
+                                            ),
+                                            true,
+                                        )
+                                    })?;
+
+                                    (parser, kind)
+                                };
+                                tracing::trace!(?kind);
 
                                 let (parser, ty) = Aml3Type::visit(parser)?;
                                 tracing::trace!(?ty);
 
-                                args.push((name, ty));
+                                args.push((name, kind, ty));
 
                                 parser_out = parser;
                             }
@@ -228,7 +253,7 @@ impl Aml3Command {
         }
     }
 
-    fn visit_asgn<'a>(parser: Parser<'a>) -> ParserResult<'a, Command> {
+    fn visit_asgn(parser: Parser<'_>) -> ParserResult<'_, Command> {
         let (parser, var) = parser::needs_space(Aml3Variable::visit)(parser)?;
         let (parser, value) = Aml3Expr::visit(parser)?;
 
@@ -249,6 +274,7 @@ impl Aml3Command {
         tracing::trace!(?command);
 
         match command {
+            '!' => Aml3Meta::visit(consumed_parser),
             '@' => Self::visit_command(consumed_parser),
             '=' => Self::visit_asgn(consumed_parser),
             '{' => {

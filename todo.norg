@@ -1,0 +1,9 @@
+* (x) Structs
+** (x) Struct Declaration. 
+    @code aml3
+    @struct #NAME { .. }
+    @end
+** (x) Struct Definition. `#NAME ..`
+** (x) Anonymous Struct. Default props for any object.
+
+* ( ) Change prev value to stack

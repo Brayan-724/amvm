@@ -1,4 +1,0 @@
-- [ ] Structs
-  - [ ] Struct Declaration. `@struct #NAME { .. }`
-  - [ ] Struct Definition. `#NAME ..`
-  - [ ] Anonymous Struct. Default props for any object.

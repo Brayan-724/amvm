@@ -11,7 +11,10 @@
 
 @puts + $a + " + " + $b '\n
 
-@call "add" $a $b
+@push $b
+@push $a
+@call $add _ _
 @declare $c _
 
-@call "console.log" + "= " $c
+@push + "= " $c
+@call $console.log _

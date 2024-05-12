@@ -5,8 +5,8 @@ use crate::{
 
 pub fn eval(
     scope: &mut AmvmScope,
-    name: &Box<str>,
-    args: &Vec<(Box<str>, AmvmType)>,
+    name: &str,
+    args: &Vec<(Box<str>, VariableKind, AmvmType)>,
     ret: &AmvmType,
     body: &Vec<Command>,
 ) -> AmvmResult {
@@ -16,7 +16,7 @@ pub fn eval(
     let name = name.to_string();
     scope
         .context
-        .write()
+        .lock()
         .unwrap()
         .variables
         .insert(name, AmvmVariable::new(VariableKind::Const, value));

@@ -1,9 +1,10 @@
 use std::fmt;
 
+use crate::CompileResult;
 use crate::{
     compilable_enum,
     parser::{self, Parser, ParserResult},
-    tokens::{AMVM_HEADER, COMMAND_SEPARATOR},
+    tokens::AMVM_HEADER,
     Compilable,
 };
 
@@ -27,15 +28,12 @@ compilable_enum!(pub AmvmTypeCasting {
 
 impl fmt::Display for AmvmTypeCasting {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!(
-            "0x{:02x}",
-            self.compile_bytecode().chars().next().unwrap() as u8
-        ))
+        f.write_fmt(format_args!("0x{:02x}", self.to_char() as u8))
     }
 }
 
 impl AmvmTypeCasting {
-    pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, AmvmTypeCasting> {
+    pub fn visit(parser: Parser<'_>) -> ParserResult<'_, AmvmTypeCasting> {
         let (parser, kind) = parser::anychar(parser)
             .map_err(parser.nom_err_with_context("Expected type casting kind"))?;
 
@@ -55,14 +53,18 @@ pub struct AmvmHeader {
 }
 
 impl Compilable for AmvmHeader {
-    fn compile_bytecode(&self) -> Box<str> {
-        let sum_kind = self.sum_kind.compile_bytecode();
-        Box::from(format!("{AMVM_HEADER}{sum_kind}{COMMAND_SEPARATOR}"))
+    fn compile_bytecode(&self, mut buffer: String) -> CompileResult {
+        use std::fmt::Write;
+
+        _ = buffer.write_str(AMVM_HEADER);
+        buffer = self.sum_kind.compile_bytecode(buffer)?;
+
+        Ok(buffer)
     }
 }
 
 impl AmvmHeader {
-    pub fn visit<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
+    pub fn visit(parser: Parser<'_>) -> ParserResult<'_, Self> {
         // Check header integrity
         let (header, parser) = parser::take(3usize)(parser)
             .map_err(parser.nom_err_with_context("Invalid bytecode header"))?;

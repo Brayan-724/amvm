@@ -1,14 +1,12 @@
 ; For loop
-{
-  @declare $min 1u8
-  @declare $max 10u8
+@declare $min 1u8
+@declare $max 5u8
 
-  @declare let $out 0u8
+@declare let $out 1u8
 
-  @for $i .. $min $max {
-    =$out * $out $i
-  }
-
-  @puts "For loop result:"
-  @puts + '  $out
+@for $i .. $min $max {
+  @puts + "Iteration: " + $i '\n
+  =$out * $out $i
 }
+
+@puts + "For loop result: " + $out '\n

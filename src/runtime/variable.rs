@@ -1,7 +1,8 @@
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
+use crate::tokens::AmvmScope;
 use crate::{
-    runtime::{AmvmError, AmvmPropagate, AmvmResult},
+    runtime::{AmvmPropagate, AmvmResult},
     tokens::{Value, VariableKind},
 };
 
@@ -29,6 +30,40 @@ impl AmvmVariable {
         }
     }
 
+    pub fn get_rw(&self) -> (VariableKind, Arc<RwLock<Value>>) {
+        match self {
+            Self::Const(_) => unimplemented!("This shouldn't be used with constant variables"),
+            Self::Mut(v) => (VariableKind::Mut, Arc::clone(v)),
+            Self::Let(v) => (VariableKind::Let, Arc::clone(v)),
+            Self::Var(v) => (VariableKind::Var, Arc::clone(v)),
+        }
+    }
+
+    pub fn from_rw(kind: VariableKind, value: Arc<RwLock<Value>>) -> Self {
+        match kind {
+            VariableKind::Const => unimplemented!("This shouldn't be used with constant variables"),
+            VariableKind::Mut => Self::Mut(value),
+            VariableKind::Let => Self::Let(value),
+            VariableKind::Var => Self::Var(value),
+        }
+    }
+
+    pub fn get_kind(&self) -> VariableKind {
+        match self {
+            Self::Const(_) => VariableKind::Const,
+            Self::Let(_) => VariableKind::Let,
+            Self::Mut(_) => VariableKind::Mut,
+            Self::Var(_) => VariableKind::Var,
+        }
+    }
+
+    pub fn is_mutable(&self) -> bool {
+        match self {
+            Self::Const(_) | Self::Let(_) => false,
+            Self::Mut(_) | Self::Var(_) => true,
+        }
+    }
+
     pub fn read(&self) -> Arc<Value> {
         match self {
             Self::Const(v) => v.clone(),
@@ -43,17 +78,17 @@ impl AmvmVariable {
         }
     }
 
-    pub fn assign(&self, v: Value) -> AmvmResult {
+    pub fn assign(&self, scope: &mut AmvmScope, v: Value) -> AmvmResult {
         let variable = match self {
             Self::Const(_) => {
-                return AmvmResult::Err(AmvmPropagate::Err(AmvmError::Other(
-                    "Can't assign a value to a constant variable",
-                )))
+                return AmvmResult::Err(AmvmPropagate::Err(
+                    scope.error("Can't assign a value to a constant variable"),
+                ))
             }
             Self::Mut(_) => {
-                return AmvmResult::Err(AmvmPropagate::Err(AmvmError::Other(
-                    "Can't assign a value to a mutable variable",
-                )))
+                return AmvmResult::Err(AmvmPropagate::Err(
+                    scope.error("Can't assign a value to a mutable variable"),
+                ))
             }
             Self::Let(v) => v,
             Self::Var(v) => v,

@@ -1,0 +1,43 @@
+!! src/lib.js
+
+! 1:0 function next(self: Iterator): number {
+@fn #u8 $next $self mut #Iterator {
+  !! src/lib.js
+  ! 2:7 return self.val += 1;
+  @builtin .obj.mut_access $self "val"
+  ! 2:7 return self.val += 1;
+  @declare $val &mut _
+  ! 2:16 return self.val += 1;
+  @builtin .mem.replace &mut $val + $val 50u8
+  ! 2:0 return self.val += 1;
+  @ret $val
+}
+
+!! src/index.js
+! 2:0 const iterator = { val: 0, next };
+@declare mut $iterator #Iterator { val 0u8 next $next }
+
+! 3:27 console.log("Returned: " + iterator.next(iterator) + '\n');
+@call . $iterator "next" &mut $iterator
+! 3:0 console.log("Returned: " + iterator.next(iterator) + '\n');
+@puts + + "Returned: " _ '\n
+! 3:27 console.log("Returned: " + iterator.next(iterator) + '\n');
+@call . $iterator "next" &mut $iterator
+! 3:0 console.log("Returned: " + iterator.next(iterator) + '\n');
+@puts + + "Returned: " _ '\n
+! 3:27 console.log("Returned: " + iterator.next(iterator) + '\n');
+@call . $iterator "next" &mut $iterator
+! 3:0 console.log("Returned: " + iterator.next(iterator) + '\n');
+@puts + + "Returned: " _ '\n
+! 3:27 console.log("Returned: " + iterator.next(iterator) + '\n');
+@call . $iterator "next" &mut $iterator
+! 3:0 console.log("Returned: " + iterator.next(iterator) + '\n');
+@puts + + "Returned: " _ '\n
+! 3:27 console.log("Returned: " + iterator.next(iterator) + '\n');
+@call . $iterator "next" &mut $iterator
+! 3:0 console.log("Returned: " + iterator.next(iterator) + '\n');
+@puts + + "Returned: " _ '\n
+! 3:27 console.log("Returned: " + iterator.next(iterator) + '\n');
+@call . $iterator "next" &mut $iterator
+! 3:0 console.log("Returned: " + iterator.next(iterator) + '\n');
+@puts + + "Returned: " _ '\n

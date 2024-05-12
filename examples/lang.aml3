@@ -81,7 +81,7 @@
 
   ; LINE:COLUMN CODE
   ! 1:0 const a = 1;
-  @declare let $a 1
+  @declare let $a 1u8
 
   ; You can add meta in expressions too, use @tmp
   ! 2:11 a
@@ -93,7 +93,7 @@
   @tmp 2;
   ! 3:0 a = 2;
   =$a _
-  ;; ERROR: Cannot reassign a `let` variable.
+  ;; ERROR: Cannot reassign a `mut` variable.
   ;; 3 | a = 2;
   ;;   | ^
   ;; Using meta code, use --ir-debug to see aml3 code.

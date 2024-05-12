@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::{
     runtime::{expr, AmvmResult},
@@ -16,8 +16,8 @@ pub fn eval(
     for (prop_name, prop_value) in body {
         let prop_name = prop_name.to_string();
         let prop_value = expr::eval(scope, prop_value)?.as_value();
-        let prop_value =
-            Arc::into_inner(prop_value).expect("Can't get inner value on struct expression");
+        let prop_value = &*prop_value;
+        let prop_value = Arc::new(RwLock::new(prop_value.clone()));
 
         body_evaluated.insert(prop_name, prop_value);
     }

@@ -7,8 +7,8 @@ pub use error::Aml3Error;
 mod expr;
 pub use expr::Aml3Expr;
 
-mod parser;
-pub use parser::Aml3Parser;
+mod meta;
+pub use meta::Aml3Meta;
 
 mod scope;
 pub use scope::Aml3Scope;

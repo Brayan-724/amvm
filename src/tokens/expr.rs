@@ -1,17 +1,16 @@
 use crate::{
     create_bytes,
     parser::{self, Parser, ParserResult},
-    tokens::Value,
-    Compilable,
+    tokens::{AmvmType, Command, Value, VariableKind},
+    Compilable, CompileResult,
 };
-
-use super::AmvmType;
 
 create_bytes! {0x10;
     EXPR_BINARY,
     EXPR_PREV,
     EXPR_PROP,
     EXPR_RANGE,
+    EXPR_REF,
     EXPR_STRUCT,
     EXPR_VALUE,
     EXPR_VAR
@@ -47,28 +46,33 @@ pub enum BinaryKind {
 }
 
 impl Compilable for BinaryKind {
-    fn compile_bytecode(&self) -> Box<str> {
-        Box::from(match self {
-            Self::Add => EXPR_KIND_ADD.to_string(),
-            Self::Sub => EXPR_KIND_SUB.to_string(),
-            Self::Mult => EXPR_KIND_MUL.to_string(),
+    fn compile_bytecode(&self, mut buffer: String) -> CompileResult {
+        use std::fmt::Write;
+
+        _ = buffer.write_char(match self {
+            Self::Add => EXPR_KIND_ADD,
+            Self::Sub => EXPR_KIND_SUB,
+            Self::Mult => EXPR_KIND_MUL,
             // Conditionals
-            Self::Equal => EXPR_KIND_EQUAL.to_string(),
-            Self::NotEqual => EXPR_KIND_NOT_EQUAL.to_string(),
-            Self::GreaterThan => EXPR_KIND_GREATER_THAN.to_string(),
-            Self::GreaterThanEqual => EXPR_KIND_GREATER_THAN_EQUAL.to_string(),
-            Self::LessThan => EXPR_KIND_LESS_THAN.to_string(),
-            Self::LessThanEqual => EXPR_KIND_LESS_THAN_EQUAL.to_string(),
-        })
+            Self::Equal => EXPR_KIND_EQUAL,
+            Self::NotEqual => EXPR_KIND_NOT_EQUAL,
+            Self::GreaterThan => EXPR_KIND_GREATER_THAN,
+            Self::GreaterThanEqual => EXPR_KIND_GREATER_THAN_EQUAL,
+            Self::LessThan => EXPR_KIND_LESS_THAN,
+            Self::LessThanEqual => EXPR_KIND_LESS_THAN_EQUAL,
+        });
+
+        Ok(buffer)
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum CommandExpression {
     Binary(BinaryKind, Box<CommandExpression>, Box<CommandExpression>),
     Prev,
     Property(Box<CommandExpression>, Box<CommandExpression>),
     Range(Box<CommandExpression>, Box<CommandExpression>),
+    Ref(VariableKind, Box<CommandExpression>),
     Struct(AmvmType, Vec<(Box<str>, CommandExpression)>),
     Value(Value),
     Var(String),
@@ -81,6 +85,7 @@ impl std::fmt::Display for CommandExpression {
             Self::Prev => f.write_str("Prev"),
             Self::Property(a, b) => write!(f, "({a})[{b}]"),
             Self::Range(a, b) => write!(f, "({a}) .. ({b})"),
+            Self::Ref(kind, var) => write!(f, "&{kind} {var}"),
             Self::Struct(t, data) => write!(f, "{t} {data:?}"),
             Self::Value(v) => (v as &dyn std::fmt::Display).fmt(f),
             Self::Var(v) => write!(f, "${v}"),
@@ -88,22 +93,22 @@ impl std::fmt::Display for CommandExpression {
     }
 }
 
-impl Into<Option<Box<CommandExpression>>> for CommandExpression {
-    fn into(self) -> Option<Box<CommandExpression>> {
-        Some(Box::from(self))
+impl From<CommandExpression> for Option<Box<CommandExpression>> {
+    fn from(val: CommandExpression) -> Self {
+        Some(Box::from(val))
     }
 }
 
 impl CommandExpression {
     #[inline]
-    fn condition<'a>(parser: Parser<'a>, kind: BinaryKind) -> ParserResult<'a, Self> {
+    fn condition(parser: Parser<'_>, kind: BinaryKind) -> ParserResult<'_, Self> {
         let (parser, a) = CommandExpression::visit(parser)?;
         let (parser, b) = CommandExpression::visit(parser)?;
 
         Ok((parser, CommandExpression::Binary(kind, a.into(), b.into())))
     }
 
-    pub fn visit_binary<'a>(parser: Parser<'a>) -> ParserResult<'a, Self> {
+    pub fn visit_binary(parser: Parser<'_>) -> ParserResult<'_, Self> {
         let (parser, kind) = parser::anychar(parser)
             .map_err(parser.nom_err_with_context("Expected conditional kind"))?;
 
@@ -132,7 +137,7 @@ impl CommandExpression {
         }
     }
 
-    pub fn visit<'a>(parser_: Parser<'a>) -> ParserResult<'a, Self> {
+    pub fn visit(parser_: Parser<'_>) -> ParserResult<'_, Self> {
         let (parser, b) = parser::anychar(parser_)
             .map_err(parser_.nom_err_with_context("Expected expression kind"))?;
 
@@ -150,6 +155,12 @@ impl CommandExpression {
                 let (parser, b) = CommandExpression::visit(parser)?;
 
                 Ok((parser, CommandExpression::Range(a.into(), b.into())))
+            }
+            _ if b == EXPR_REF => {
+                let (parser, kind) = Command::visit_kind(parser)?;
+                let (parser, var) = CommandExpression::visit(parser)?;
+
+                Ok((parser, CommandExpression::Ref(kind, var.into())))
             }
             _ if b == EXPR_STRUCT => {
                 let (parser, r#type) = AmvmType::visit(parser)?;
@@ -188,52 +199,55 @@ impl CommandExpression {
 }
 
 impl Compilable for CommandExpression {
-    fn compile_bytecode(&self) -> Box<str> {
-        Box::from(match self {
+    fn compile_bytecode(&self, mut buffer: String) -> CompileResult {
+        use std::fmt::Write;
+
+        match self {
             Self::Binary(kind, a, b) => {
-                let kind = kind.compile_bytecode();
-                let a = a.compile_bytecode();
-                let b = b.compile_bytecode();
-
-                format!("{EXPR_BINARY}{kind}{a}{b}")
+                _ = buffer.write_char(EXPR_BINARY);
+                buffer = kind.compile_bytecode(buffer)?;
+                buffer = a.compile_bytecode(buffer)?;
+                buffer = b.compile_bytecode(buffer)?;
             }
-            Self::Prev => EXPR_PREV.to_string(),
-            Self::Property(a, b) => format!(
-                "{EXPR_PROP}{}{}",
-                a.compile_bytecode(),
-                b.compile_bytecode()
-            ),
-            Self::Range(a, b) => format!(
-                "{EXPR_RANGE}{}{}",
-                a.compile_bytecode(),
-                b.compile_bytecode()
-            ),
-            Self::Struct(r#type, data) => format!(
-                "{EXPR_STRUCT}{}{}",
-                r#type.compile_bytecode(),
-                data.compile_bytecode()
-            ),
-            Self::Value(v) => format!("{EXPR_VALUE}{}", v.compile_bytecode()),
-            Self::Var(var) => format!("{EXPR_VAR}{}", Value::compile_string(var)),
-        })
-    }
-}
-
-impl Compilable for Vec<(Box<str>, CommandExpression)> {
-    fn compile_bytecode(&self) -> Box<str> {
-        let len = self.len() as u8 as char;
-
-        let fields: String = self
-            .iter()
-            .map(|f| {
-                format!(
-                    "{name}{value}",
-                    name = f.0.compile_bytecode(),
-                    value = f.1.compile_bytecode()
+            Self::Prev => _ = buffer.write_char(EXPR_PREV),
+            Self::Property(a, b) => {
+                _ = buffer.write_char(EXPR_PROP);
+                buffer = a.compile_bytecode(buffer)?;
+                buffer = b.compile_bytecode(buffer)?;
+            }
+            Self::Range(a, b) => {
+                _ = buffer.write_char(EXPR_RANGE);
+                buffer = a.compile_bytecode(buffer)?;
+                buffer = b.compile_bytecode(buffer)?;
+            }
+            Self::Ref(kind, var) => {
+                _ = buffer.write_char(EXPR_REF);
+                buffer = kind.compile_bytecode(buffer)?;
+                buffer = var.compile_bytecode(buffer)?;
+            }
+            Self::Struct(r#type, data) => {
+                _ = buffer.write_char(EXPR_STRUCT);
+                buffer = r#type.compile_bytecode(buffer)?;
+                buffer = (
+                    data,
+                    |mut buffer: String, f: &(Box<str>, CommandExpression)| -> CompileResult {
+                        buffer = f.0.compile_bytecode(buffer)?;
+                        buffer = f.1.compile_bytecode(buffer)?;
+                        Ok(buffer)
+                    },
                 )
-            })
-            .collect();
+                    .compile_bytecode(buffer)?;
+            }
+            Self::Value(v) => {
+                _ = buffer.write_char(EXPR_VALUE);
+                buffer = v.compile_bytecode(buffer)?;
+            }
+            Self::Var(var) => {
+                _ = buffer.write_char(EXPR_VAR);
+                buffer = var.compile_bytecode(buffer)?;
+            }
+        }
 
-        Box::from(format!("{len}{fields}"))
+        Ok(buffer)
     }
 }
