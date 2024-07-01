@@ -6,7 +6,7 @@ fn main() {
     let source = args.next().expect("Provide source file");
     let source = std::fs::read_to_string(source).expect("Cannot read source file");
 
-    let a = aml3::from_str(&source);
+    let a = aml3::parser::parse_file(&source);
 
     match a {
         Ok(a) => println!("{a:#?}"),

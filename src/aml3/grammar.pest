@@ -1,0 +1,61 @@
+program = _{ SOI ~ (NONE* ~ (comment | Command))* ~ NONE* ~ EOI }
+
+NONE       = _{ WHITESPACE | NEWLINE }
+WHITESPACE = _{ " " | "\t" }
+
+Command            = { CommandDeclare | CommandPuts }
+CommandDeclare     = { "@declare" ~ CommandDeclareKind? ~ Identifier ~ Expr }
+CommandDeclareKind = { "let" | "mut" }
+CommandPuts        = { "@puts" ~ Expr }
+
+Identifier = ${ "$" ~ ("_" | ASCII_DIGIT | ASCII_ALPHA)+ }
+
+fenced_expr = _{ "(" ~ Expr ~ ")" }
+Expr        =  { expr2 ~ (binary_op ~ expr2)* }
+expr2       = _{ fenced_expr | monoexpr }
+monoexpr    = _{ literal | Identifier }
+
+literal        = { Number | string }
+Number         = @{ "-"? ~ WHITESPACE* ~ NUMBER+ ~ ("." ~ NUMBER*)? ~ Type_Number }
+string         = ${ quote ~ string_content ~ quote }
+string_content = @{ (!quote ~ ANY)* }
+
+Type_Number = { "i8" | "u8" | "f32" }
+
+quote = _{ "\"" }
+
+binary_op = _{
+  // math
+    add
+  | subtract
+  | multiply
+  | divide 
+
+  // logical
+  | not_equal
+  | equal
+  | less_equal
+  | less_than
+  | greater_equal
+  | greater_than
+}
+
+// math
+add      = { "+" }
+subtract = { "-" }
+multiply = { "*" }
+divide   = { "/" }
+
+// logical
+equal         = { "==" }
+not_equal     = { "!=" }
+less_than     = { "<" }
+less_equal    = { "<=" }
+greater_than  = { ">" }
+greater_equal = { ">=" }
+
+
+// Meta
+comment       = _{ line_comment | meta_comment }
+line_comment  = @{ ";" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
+meta_comment  = @{ "!" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }

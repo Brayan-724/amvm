@@ -1,3 +1,5 @@
+pub mod parser;
+
 mod command;
 pub use command::Aml3Command;
 

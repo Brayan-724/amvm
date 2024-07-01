@@ -16,6 +16,8 @@ name = "amvm"
 version = "0.1.0"
 dependencies = [
  "nom",
+ "pest",
+ "pest_derive",
  "tracing",
  "tracing-subscriber",
 ]
